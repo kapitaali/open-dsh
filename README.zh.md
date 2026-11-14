@@ -6,6 +6,8 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 它构建于**一切皆插件**的架构之上，由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)。
 
+> **本检出是 `open-dsh`，是上游 DeepSeek Harness 的一个 fork。** 它只在上游之上增加了一个功能：**连接配置（connection profiles）**——一个 profile 可以使用自己的 API 端点与 API 密钥，而不是默认的 DeepSeek 连接。其余部分均为上游内容。参见[连接配置](#connection-profiles)。
+
 文档：[https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
 ## 开发者预览
@@ -43,6 +45,50 @@ pnpm dsh web
 ```
 
 `pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
+
+<a id="connection-profiles"></a>
+
+## 连接配置
+
+`open-dsh` 增加了**连接配置（connection profiles）**：一个命名的 API 端点加上一个 API 密钥，profile 用它们替代默认的 DeepSeek 连接。默认 profile 不受影响——只有你显式指向某个连接的 profile 才会不同。
+
+### 创建一个使用连接的 profile
+
+```sh
+dsh connection create my-profile --url https://my-endpoint.example --key sk-…
+dsh --profile my-profile
+```
+
+### 或者把已有 profile 指向一个已保存的连接
+
+```sh
+dsh connection add my-endpoint --url https://my-endpoint.example --key sk-…
+dsh connection use my-profile my-endpoint
+```
+
+### 选择线路协议
+
+`--route` 选择 profile 应用连接的方式。默认是 `deepseek`，使用 DeepSeek 官方 API 所用的 Anthropic Messages 线路。对于 OpenAI 兼容的端点（NVIDIA NIM、Nous Portal、大多数网关），传入 `--route pi-ai` 与一个模型：
+
+```sh
+dsh connection create nvidia --url https://integrate.api.nvidia.com/v1 --key nvapi-… \
+  --route pi-ai --model nvidia/nemotron-3.5-super-vl-120b-a12b
+```
+
+### 管理连接
+
+```sh
+dsh connection list
+dsh connection show <name>
+dsh connection remove <name>
+```
+
+### 说明
+
+- API 密钥保存在私有文件中（`$DSH_HOME/.credentials.yaml`，权限 `0600`），绝不写入 profile 配置。
+- 连接名使用小写加连字符（`my-profile`，而不是 `My Profile`）。
+- `use` 与 `create` 写入的是普通的 profile 补丁行；连接文档本身位于 `$DSH_HOME/connections.yaml`，不含任何密钥。
+- 设计与验证记录：[reports/RR-W22-20261114.md](reports/RR-W22-20261114.md)。
 
 ## 社区与支持
 

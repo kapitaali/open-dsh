@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write README.md
 /deepseek-harness:
-  en: f68c4f080ce55ff2
-  zh: 88a76d7f7f0b260e
+  en: e1b9542387b730bd
+  zh: e5f45b9fd66c81bd
 /deepseek-harness/developer-preview:
   en: 4ef4d8a71ac143f0
   zh: 1bfc3149ba8e5543
@@ -16,7 +16,25 @@
   zh: 0f536f4208df1d60
 /deepseek-harness/run/run-from-source:
   en: 819e3f7c144d0d64
-  zh: de815f040975dba7
+  zh: af4f0ca6cab41ce0
+/deepseek-harness/connection-profiles:
+  en: d0bf9a9fd6592b24
+  zh: 2c8b99a6b96d7512
+/deepseek-harness/connection-profiles/create-a-profile-that-uses-a-connection:
+  en: 27f8f1df442bc151
+  zh: fb09e1ef94613b74
+/deepseek-harness/connection-profiles/or-point-an-existing-profile-at-a-saved-connection:
+  en: aa2fd63153e91085
+  zh: bf96caed4de68d73
+/deepseek-harness/connection-profiles/choosing-the-wire-protocol:
+  en: 49c59b786589a2d4
+  zh: c0eb96fcca366ba2
+/deepseek-harness/connection-profiles/managing-connections:
+  en: 368982b6c637fdbb
+  zh: ac02906c4e224fb3
+/deepseek-harness/connection-profiles/notes:
+  en: df4dc4091429e709
+  zh: 994659276c6e6f56
 /deepseek-harness/community-and-support:
   en: 20acf6451fdc869b
   zh: d06246dd019ecef7

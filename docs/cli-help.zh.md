@@ -13,6 +13,7 @@
 
 - [`dsh`](#dsh)
 - [`dsh plugin`](#dsh-plugin)
+- [`dsh connection`](#dsh-connection)
 - [`dsh acp`](#dsh-acp)
 - [`dsh headless`](#dsh-headless)
 - [`dsh sdk`](#dsh-sdk)
@@ -57,6 +58,9 @@ Examples:
   dsh tui --resume <session>                arguments after the launcher flags reach the app
   dsh web --help                            the web app's own flags and help
   dsh plugin --profile tui add <package>    install a plugin into the tui profile
+  dsh connection add acme --url https://gw.acme.example --key sk-…
+                                            save a connection profile and its API key
+  dsh connection use tui acme               apply the acme connection to the tui profile
 
 ```
 
@@ -79,6 +83,25 @@ Options:
   --profile <name>  the profile whose plugins to manage (initialized on first
                     use)
   -h, --help        show this help
+```
+
+<a id="dsh-connection"></a>
+## `dsh connection`
+
+调用方式: `dsh connection --help`
+
+```text
+Usage: dsh connection [options] [args...]
+
+manage named connection profiles (endpoint + API key) and apply them to a
+profile
+
+Arguments:
+  args        connection command arguments (add, use, list, show, remove,
+              create)
+
+Options:
+  -h, --help  show this help
 ```
 
 <a id="dsh-acp"></a>

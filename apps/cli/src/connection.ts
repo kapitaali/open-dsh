@@ -1,0 +1,257 @@
+/**
+ * `dsh connection` — manage named connection profiles.
+ *
+ * A connection is one named API route (endpoint + credential reference). This
+ * command stores it in `$DSH_HOME/connections.yaml`, stores its API key in the
+ * credential store, and applies it to a profile by writing the `llm-deepseek`
+ * row's config in that profile's patch layer. The harness runtime resolves the
+ * resulting config; it never reads the connection document.
+ * @module @deepseek-ai/dsh/connection
+ */
+
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { isMap, isSeq, parseDocument } from 'yaml'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { DEFAULT_PROFILE_BUNDLES, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
+import { initProfile, PROFILE_PATCH_FILENAME, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
+import {
+  findConnection,
+  isConnectionName,
+  readConnections,
+  removeConnectionKey,
+  resolveConnectionsPath,
+  storeConnectionKey,
+  writeConnections,
+  type Connection,
+} from '@deepseek-ai/dsh-connection-store'
+
+/** The profile row a connection is applied through. */
+const LLM_DEEPSEEK_ROW = {
+  id: 'llm-deepseek',
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key',
+} as const
+
+/** Parsed command arguments: positionals plus `--flag value` pairs. */
+interface ParsedArgs {
+  readonly positionals: readonly string[]
+  readonly flags: Readonly<Record<string, string>>
+}
+
+/**
+ * Run the `dsh connection` command.
+ * @param args - arguments after `connection`, verbatim.
+ * @returns the process exit code.
+ */
+export async function runConnection(args: readonly string[]): Promise<number> {
+  const [action, ...rest] = args
+  try {
+    switch (action) {
+      case 'add':
+        return await addConnection(rest)
+      case 'use':
+        return await useConnection(rest)
+      case 'list':
+        return await listConnections()
+      case 'show':
+        return await showConnection(rest)
+      case 'remove':
+        return await removeConnection(rest)
+      case 'create':
+        return await createProfile(rest)
+      default:
+        process.stderr.write(`dsh: unknown connection action ${JSON.stringify(action ?? '')}\n${USAGE}`)
+        return 1
+    }
+  } catch (error) {
+    process.stderr.write(`dsh: ${error instanceof Error ? error.message : String(error)}\n`)
+    return 1
+  }
+}
+
+/** Derive the credential reference for a connection name. */
+function credentialRefFor(name: string): string {
+  return `${name.toUpperCase().replace(/-/g, '_')}_API_KEY`
+}
+
+/** Store one connection, replacing any existing connection of the same name. */
+async function saveConnection(connection: Connection): Promise<void> {
+  const path = resolveConnectionsPath()
+  const document = await readConnections(path)
+  await writeConnections(path, {
+    version: document.version,
+    connections: [...document.connections.filter(existing => existing.name !== connection.name), connection],
+  })
+}
+
+function assertConnectionName(name: string): void {
+  if (!isConnectionName(name)) throw new Error(`connection name "${name}" must match /^[a-z][a-z0-9-]*$/`)
+}
+
+async function addConnection(args: readonly string[]): Promise<number> {
+  const { positionals, flags } = parseArgs(args)
+  const name = requirePositional(positionals, 0, 'add <name> --url <url> --key <key>')
+  const url = requireFlag(flags, 'url')
+  const key = requireFlag(flags, 'key')
+  assertConnectionName(name)
+  const connection: Connection = { name, baseURL: url, apiKeyEnv: credentialRefFor(name) }
+  await saveConnection(connection)
+  await storeConnectionKey(connection.apiKeyEnv, key)
+  process.stdout.write(`dsh: saved connection "${name}" (${url}) as ${connection.apiKeyEnv}\n`)
+  return 0
+}
+
+async function useConnection(args: readonly string[]): Promise<number> {
+  const { positionals } = parseArgs(args)
+  const profile = requirePositional(positionals, 0, 'use <profile> <name>')
+  const name = requirePositional(positionals, 1, 'use <profile> <name>')
+  const document = await readConnections(resolveConnectionsPath())
+  const connection = findConnection(document, name)
+  if (connection === undefined) throw new Error(`no connection named "${name}"`)
+  await applyConnectionToProfile(profile, connection)
+  process.stdout.write(`dsh: profile "${profile}" now uses connection "${name}" (${connection.baseURL})\n`)
+  return 0
+}
+
+async function listConnections(): Promise<number> {
+  const document = await readConnections(resolveConnectionsPath())
+  if (document.connections.length === 0) {
+    process.stdout.write('dsh: no connections saved\n')
+    return 0
+  }
+  process.stdout.write('Connections:\n')
+  for (const connection of document.connections) {
+    process.stdout.write(`  ${connection.name}  ${connection.baseURL}  ${connection.apiKeyEnv}\n`)
+  }
+  return 0
+}
+
+async function showConnection(args: readonly string[]): Promise<number> {
+  const { positionals } = parseArgs(args)
+  const name = requirePositional(positionals, 0, 'show <name>')
+  const document = await readConnections(resolveConnectionsPath())
+  const connection = findConnection(document, name)
+  if (connection === undefined) throw new Error(`no connection named "${name}"`)
+  process.stdout.write(`${connection.name}\n  baseURL:    ${connection.baseURL}\n  apiKeyEnv:  ${connection.apiKeyEnv}\n`)
+  return 0
+}
+
+async function removeConnection(args: readonly string[]): Promise<number> {
+  const { positionals } = parseArgs(args)
+  const name = requirePositional(positionals, 0, 'remove <name>')
+  const path = resolveConnectionsPath()
+  const document = await readConnections(path)
+  const connection = findConnection(document, name)
+  if (connection === undefined) throw new Error(`no connection named "${name}"`)
+  await writeConnections(path, {
+    version: document.version,
+    connections: document.connections.filter(existing => existing.name !== name),
+  })
+  await removeConnectionKey(connection.apiKeyEnv)
+  process.stdout.write(`dsh: removed connection "${name}"\n`)
+  return 0
+}
+
+async function createProfile(args: readonly string[]): Promise<number> {
+  const { positionals, flags } = parseArgs(args)
+  const profile = requirePositional(positionals, 0, 'create <profile> --url <url> --key <key>')
+  const url = requireFlag(flags, 'url')
+  const key = requireFlag(flags, 'key')
+  assertConnectionName(profile)
+  initProfile(resolveProfileDir(profile), profileTemplate(flags['from-default-profile']))
+  const connection: Connection = { name: profile, baseURL: url, apiKeyEnv: credentialRefFor(profile) }
+  await saveConnection(connection)
+  await storeConnectionKey(connection.apiKeyEnv, key)
+  await applyConnectionToProfile(profile, connection)
+  process.stdout.write(`dsh: created profile "${profile}" using connection "${profile}" (${url})\n`)
+  return 0
+}
+
+/** Resolve a shipped profile template name to its bundle list. */
+function profileTemplate(template: string | undefined): readonly string[] {
+  if (template === undefined) return DEFAULT_PROFILE_BUNDLES
+  const profile = PROFILE_TEMPLATES[template]
+  if (profile === undefined) throw new Error(`unknown default profile "${template}"`)
+  return profile.bundles
+}
+
+/**
+ * Write one connection into a profile's patch layer, replacing the
+ * `llm-deepseek` row's config. Comments and `!!js` expressions outside the
+ * replaced value survive; the write is atomic at owner-only permissions.
+ * @param profile - profile name.
+ * @param connection - the connection to apply.
+ */
+async function applyConnectionToProfile(profile: string, connection: Connection): Promise<void> {
+  const patchPath = join(resolveProfileDir(profile), PROFILE_PATCH_FILENAME)
+  let text: string
+  try {
+    text = readFileSync(patchPath, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    text = '[]\n'
+  }
+  const document = parseDocument(text, {
+    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }],
+  })
+  if (document.errors[0] !== undefined) throw document.errors[0]
+  if (!isSeq(document.contents)) throw new Error(`${patchPath} must be a YAML sequence`)
+  document.contents.flow = false
+  const config = { baseURL: connection.baseURL, apiKeyEnv: connection.apiKeyEnv }
+  const index = document.contents.items.findLastIndex((item, itemIndex) => isMap(item)
+    && document.getIn([itemIndex, 'id']) === LLM_DEEPSEEK_ROW.id
+    && !item.has('insert')
+    && (!item.has('name') || document.getIn([itemIndex, 'name']) === LLM_DEEPSEEK_ROW.name))
+  if (index < 0) {
+    document.add(document.createNode({ id: LLM_DEEPSEEK_ROW.id, name: LLM_DEEPSEEK_ROW.name, config }))
+  } else {
+    document.setIn([index, 'config'], document.createNode(config))
+  }
+  await writeFileAtomic(patchPath, String(document), { mode: 0o600 })
+}
+
+/** Parse positionals and `--flag value` / `--flag=value` pairs. */
+function parseArgs(args: readonly string[]): ParsedArgs {
+  const positionals: string[] = []
+  const flags: Record<string, string> = {}
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]
+    if (arg === undefined) continue
+    const inline = /^--([^=]+)=(.*)$/.exec(arg)
+    if (inline !== null) {
+      const key = inline[1]
+      const value = inline[2]
+      if (key !== undefined && value !== undefined) flags[key] = value
+      continue
+    }
+    if (arg.startsWith('--')) {
+      const value = args[index + 1]
+      if (value === undefined) throw new Error(`${arg} needs a value`)
+      flags[arg.slice(2)] = value
+      index++
+      continue
+    }
+    positionals.push(arg)
+  }
+  return { positionals, flags }
+}
+
+function requirePositional(positionals: readonly string[], index: number, usage: string): string {
+  const value = positionals[index]
+  if (value === undefined) throw new Error(`usage: dsh connection ${usage}`)
+  return value
+}
+
+function requireFlag(flags: Readonly<Record<string, string>>, name: string): string {
+  const value = flags[name]
+  if (value === undefined || value === '') throw new Error(`--${name} is required`)
+  return value
+}
+
+const USAGE = `Usage:
+  dsh connection add <name> --url <url> --key <key>       save a connection and its API key
+  dsh connection use <profile> <name>                     apply a connection to a profile
+  dsh connection list                                     list saved connections
+  dsh connection show <name>                              show one connection
+  dsh connection remove <name>                            remove a connection and its key
+  dsh connection create <profile> --url <url> --key <key> create a profile with a connection`

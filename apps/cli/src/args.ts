@@ -57,8 +57,20 @@ interface PluginInvocation {
   args: string[]
 }
 
+/** Manage named connection profiles: `args` are the connection command's own. */
+interface ConnectionInvocation {
+  mode: 'connection'
+  /** Raw connection-command arguments, verbatim. */
+  args: string[]
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | DumpConfigSchemaInvocation | PluginInvocation
+export type DshInvocation =
+  | ProfileInvocation
+  | DumpConfigInvocation
+  | DumpConfigSchemaInvocation
+  | PluginInvocation
+  | ConnectionInvocation
 
 /** Launcher flags for profile boot and configuration dumps. */
 interface BootOptions {
@@ -97,6 +109,9 @@ Examples:
   dsh tui --resume <session>                arguments after the launcher flags reach the app
   dsh web --help                            the web app's own flags and help
   dsh plugin --profile tui add <package>    install a plugin into the tui profile
+  dsh connection add acme --url https://gw.acme.example --key sk-…
+                                            save a connection profile and its API key
+  dsh connection use tui acme               apply the acme connection to the tui profile
 `
 
 /**
@@ -202,8 +217,22 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
       })
   }
 
+  if (first === 'connection') {
+    const connection = program.command('connection')
+      .description('manage named connection profiles (endpoint + API key) and apply them to a profile')
+    connection
+      .helpOption('-h, --help', 'show this help')
+      .passThroughOptions()
+      .allowUnknownOption()
+      .argument('[args...]', 'connection command arguments (add, use, list, show, remove, create)')
+      .action((args: string[]) => {
+        if (args.length === 0) program.error('error: connection needs an action (add, use, list, show, remove, create)')
+        resolved = { mode: 'connection', args }
+      })
+  }
+
   try {
-    const expanded = first !== undefined && !first.startsWith('-') && first !== 'plugin'
+    const expanded = first !== undefined && !first.startsWith('-') && first !== 'plugin' && first !== 'connection'
       ? ['--profile', ...argv]
       : argv
     program.parse(expanded, { from: 'user' })

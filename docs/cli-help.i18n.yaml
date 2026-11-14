@@ -9,14 +9,17 @@
   en: b7174eab3476579d
   zh: 5ddab967320e3cff
 /dsh-cli-help/contents:
-  en: 00308bcc6dc90afd
-  zh: 16f7442b76686a02
+  en: 0935b4c1a1da18eb
+  zh: dea8cabc425a2167
 /dsh-cli-help/dsh:
   en: e0695abcf7d8b521
   zh: 712c23b3c8a115ca
 /dsh-cli-help/dsh-plugin:
-  en: adad99c125d0ac51
-  zh: f11024971184f737
+  en: b9765a7d9fc032a5
+  zh: 2d728f544a7e3a6f
+/dsh-cli-help/dsh-connection:
+  en: d788b7b9d39d38c0
+  zh: 8a20475059751ca9
 /dsh-cli-help/dsh-acp:
   en: bcb0f84577ce5f03
   zh: 4382e617006849db

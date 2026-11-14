@@ -147,6 +147,14 @@ describe('parseDshArgs', () => {
     expect(exitCode(['plugin', '--profile', profile, 'add', 'example-plugin'])).toBe(1)
   })
 
+  it('routes the connection command with its own arguments', () => {
+    expect(parse(['connection', 'add', 'acme', '--url', 'https://x.example', '--key', 'sk-test']))
+      .toEqual({ mode: 'connection', args: ['add', 'acme', '--url', 'https://x.example', '--key', 'sk-test'] })
+    expect(parse(['connection', 'use', 'tui', 'acme']))
+      .toEqual({ mode: 'connection', args: ['use', 'tui', 'acme'] })
+    expect(exitCode(['connection'])).toBe(1)
+  })
+
   it.each([
     ['desktop'], ['--profile', 'Desktop'],
     ['desktop', '--dump-config'], ['DESKTOP', '--dump-default-config'],

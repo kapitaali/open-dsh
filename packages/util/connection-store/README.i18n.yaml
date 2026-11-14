@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/util/connection-store/README.md
+/:
+  en: 34f74a375cd16255
+  zh: 53632c9c824b2d3a
+/deepseek-ai-dsh-connection-store:
+  en: b1a92bdb35f7d6f1
+  zh: b3c036e283ba515a
+/deepseek-ai-dsh-connection-store/summary:
+  en: dd3792845f530cdb
+  zh: a35dfa7141b6b05b
+/deepseek-ai-dsh-connection-store/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-connection-store/use-this-package:
+  en: 84a104b723830fda
+  zh: 0c55fd8e6d37887e
+/deepseek-ai-dsh-connection-store/use-this-package/storing-the-key:
+  en: 9ce8eb598131233a
+  zh: fcfa6f6f21bb1abd
+/deepseek-ai-dsh-connection-store/use-this-package/connection-fields:
+  en: e0c41ad31918e5ee
+  zh: 243b635e70618bda
+/deepseek-ai-dsh-connection-store/use-this-package/failures-to-plan-for:
+  en: f0f7b4d70a491b41
+  zh: 12cf94933bd42589
+/deepseek-ai-dsh-connection-store/understand-the-implementation:
+  en: 42b15ac6321706aa
+  zh: 4ed0861911abaf5d
+/deepseek-ai-dsh-connection-store/understand-the-implementation/source-map:
+  en: f26578603e479a7f
+  zh: 3cb711c596afb749
+/deepseek-ai-dsh-connection-store/understand-the-implementation/document-layout:
+  en: 957d0db8bf8be934
+  zh: 07cd53e49d14b9a7
+/deepseek-ai-dsh-connection-store/understand-the-implementation/write-path:
+  en: fbc9250fa0325116
+  zh: 1a69fa25337267ee
+/deepseek-ai-dsh-connection-store/further-exploration:
+  en: fdfaddc6b822346b
+  zh: 04ec989c54459d45
+/deepseek-ai-dsh-connection-store/model-experience:
+  en: 8f8774c95c12403f
+  zh: cf46d46a63a70c3e
+/deepseek-ai-dsh-connection-store/model-experience/kv-cache-effect:
+  en: 815e93723a98919c
+  zh: 921da870f67e4033
+/deepseek-ai-dsh-connection-store/known-limitations-and-deferred-work:
+  en: ab5075def5ce20ce
+  zh: 731039c9d962e13d
+/deepseek-ai-dsh-connection-store/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98

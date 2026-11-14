@@ -114,11 +114,12 @@ describe('connection route', () => {
     )).toThrow(/must be "deepseek" or "pi-ai"/)
   })
 
-  it('refuses a pi-ai route without a model', () => {
-    expect(() => parseConnectionsDocument(
+  it('accepts a pi-ai route without a model, deferring to the catalog', () => {
+    const document = parseConnectionsDocument(
       'version: 1\nconnections:\n  - name: acme\n    baseURL: https://x.example\n    apiKeyEnv: ACME_API_KEY\n    route: pi-ai\n',
       'file',
-    )).toThrow(/needs a model/)
+    )
+    expect(document.connections[0]?.model).toBeUndefined()
   })
 
   it('refuses a non-positive context window', () => {

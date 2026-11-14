@@ -81,17 +81,30 @@ dsh connection remove <name>
 
 ### Importing keys from Hermes
 
-If Hermes already holds your provider keys, import them into the dsh credential store instead of retyping them. The setup step asks where Hermes is installed (default `~/.hermes`), reads its `.env`, and writes the dsh credential file:
+If Hermes already holds your provider keys, import them into the dsh credential store instead of retyping them. The setup step asks where Hermes is installed (default `~/.hermes`), reads its `.env`, writes the dsh credential file, and turns each recognised provider key into a connection using the provider's catalog endpoint:
 
 ```sh
 pnpm run setup:hermes
 ```
 
-It imports every credential-shaped entry (`*_API_KEY`, `*_TOKEN`, `*_SECRET`, `*_PASSWORD`) and reports the reference names; pass `--all` to import every assignment, or `--dry-run` to preview. Values are never printed.
+Example output:
+
+```text
+Importing 6 credentials (skipping 11 non-credential)
+  imported OPENROUTER_API_KEY
+  imported NVIDIA_API_KEY
+  …
+  added connection openrouter (pi-ai, https://openrouter.ai/api/v1)
+  added connection nvidia (pi-ai, https://integrate.api.nvidia.com/v1)
+  added connection deepseek (deepseek, https://api.deepseek.com)
+```
+
+`--model <id>` and `--api <protocol>` apply to every created `pi-ai` connection, `--keys-only` skips connection creation, `--all` imports every assignment, and `--dry-run` previews. Values are never printed.
 
 ### Notes
 
 - The API key is stored in a private file (`$DSH_HOME/.credentials.yaml`, mode `0600`), never in the profile configuration.
+- `--key` is optional: omit it when the reference is already in the credential store, for example after `pnpm run setup:hermes`.
 - Connection names are lowercase with hyphens (`my-profile`, not `My Profile`).
 - `use` and `create` write an ordinary profile patch row; the connection document itself lives at `$DSH_HOME/connections.yaml` and holds no secret.
 - Design and verification record: [reports/RR-W22-20261114.md](reports/RR-W22-20261114.md).

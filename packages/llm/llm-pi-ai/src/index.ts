@@ -91,6 +91,7 @@ export type {
   ResolvedPiAiProviderProfile,
 } from './config.ts'
 export { supportedProtocols } from './provider.ts'
+export { PROVIDER_DATA } from './provider-data.ts'
 
 export const name = 'llm-pi-ai'
 export const inject = ['llm']

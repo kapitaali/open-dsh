@@ -16,7 +16,14 @@ import { createInterface } from 'node:readline'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import { storeConnectionKey } from '@deepseek-ai/dsh-connection-store'
+import { PROVIDER_DATA } from '@deepseek-ai/dsh-llm-pi-ai'
+import {
+  readConnections,
+  storeConnectionKey,
+  writeConnections,
+  resolveConnectionsPath,
+  type Connection,
+} from '@deepseek-ai/dsh-connection-store'
 
 /** A key whose value is a secret worth importing. */
 const CREDENTIAL_KEY = /_(?:API_KEY|TOKEN|SECRET|PASSWORD)$/i
@@ -26,8 +33,14 @@ interface Options {
   readonly dshHome: string | undefined
   /** Import every `KEY=value` entry, not only credential-shaped names. */
   readonly all: boolean
-  /** Report what would be written without touching the credential file. */
+  /** Report what would be written without touching the stores. */
   readonly dryRun: boolean
+  /** Import keys only; do not create a connection for each recognised provider. */
+  readonly keysOnly: boolean
+  /** Model id applied to every created `pi-ai` connection. */
+  readonly model: string | undefined
+  /** Wire protocol applied to every created `pi-ai` connection. */
+  readonly api: string | undefined
 }
 
 /** One parsed `.env` entry. */
@@ -46,15 +59,20 @@ export function parseArgs(argv: readonly string[]): Options | string {
   let dshHome: string | undefined
   let all = false
   let dryRun = false
+  let keysOnly = false
+  let model: string | undefined
+  let api: string | undefined
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
     if (arg === undefined) continue
     if (arg === '--') continue
-    if (arg === '--hermes-home' || arg === '--dsh-home') {
+    if (arg === '--hermes-home' || arg === '--dsh-home' || arg === '--model' || arg === '--api') {
       const value = argv[index + 1]
-      if (value === undefined) return `${arg} needs a path`
+      if (value === undefined) return `${arg} needs a value`
       if (arg === '--hermes-home') hermesHome = value
-      else dshHome = value
+      else if (arg === '--dsh-home') dshHome = value
+      else if (arg === '--model') model = value
+      else api = value
       index++
       continue
     }
@@ -66,9 +84,13 @@ export function parseArgs(argv: readonly string[]): Options | string {
       dryRun = true
       continue
     }
+    if (arg === '--keys-only') {
+      keysOnly = true
+      continue
+    }
     return `unknown argument ${JSON.stringify(arg)}`
   }
-  return { hermesHome, dshHome, all, dryRun }
+  return { hermesHome, dshHome, all, dryRun, keysOnly, model, api }
 }
 
 /**
@@ -101,6 +123,31 @@ export function parseEnvFile(text: string): EnvEntry[] {
     entries.push({ key, value })
   }
   return entries
+}
+
+/**
+ * The connection implied by one imported key: the pi-ai catalog maps a provider's
+ * environment names to its default endpoint, so a key plus that endpoint is a whole
+ * connection. Returns undefined when no provider owns the key or the provider declares
+ * no fixed endpoint (region- or resource-based ones do not).
+ * @param key - credential reference, as it appears in the Hermes `.env`.
+ * @param model - optional model id applied to a `pi-ai` connection.
+ * @param api - optional wire protocol applied to a `pi-ai` connection.
+ * @returns the connection, or undefined.
+ */
+export function connectionForKey(key: string, model?: string, api?: string): Connection | undefined {
+  for (const [provider, data] of Object.entries(PROVIDER_DATA)) {
+    if (data === undefined || !data.env.includes(key) || data.defaultBaseURL === undefined) continue
+    return {
+      name: provider,
+      baseURL: data.defaultBaseURL,
+      apiKeyEnv: key,
+      route: provider === 'deepseek' ? 'deepseek' : 'pi-ai',
+      ...model === undefined ? {} : { model },
+      ...api === undefined ? {} : { api },
+    }
+  }
+  return undefined
 }
 
 /** Ask one question on stdin with a default. */
@@ -154,6 +201,25 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (!options.dryRun) await storeConnectionKey(entry.key, entry.value, options.dshHome)
     process.stdout.write(`  ${options.dryRun ? 'would import' : 'imported'} ${entry.key}\n`)
   }
+  if (options.keysOnly) return 0
+
+  // A recognised provider key plus its catalog endpoint is already a connection.
+  const path = resolveConnectionsPath(options.dshHome)
+  const document = options.dryRun ? { version: 1, connections: [] } : await readConnections(path)
+  const byName = new Map(document.connections.map(connection => [connection.name, connection]))
+  let added = 0
+  for (const entry of selected) {
+    const connection = connectionForKey(entry.key, options.model, options.api)
+    if (connection === undefined) continue
+    if (!options.dryRun) byName.set(connection.name, connection)
+    added++
+    process.stdout.write(`  ${options.dryRun ? 'would add' : 'added'} connection ${connection.name}`
+      + ` (${connection.route}, ${connection.baseURL})\n`)
+  }
+  if (added > 0 && !options.dryRun) {
+    await writeConnections(path, { version: document.version, connections: [...byName.values()] })
+  }
+  if (added === 0) process.stdout.write('  no recognised provider keys; no connections added\n')
   return 0
 }
 

@@ -4,6 +4,8 @@ import type { Provider } from '@earendil-works/pi-ai'
 import type { LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import { PROVIDER_DATA } from './provider-data.generated.ts'
 
+export { PROVIDER_DATA }
+
 /**
  * Return generated display metadata without executing authentication.
  * @param provider - Installed catalog provider, possibly from a newer consumer dependency.

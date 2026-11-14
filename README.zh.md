@@ -87,17 +87,30 @@ dsh connection remove <name>
 
 ### 从 Hermes 导入密钥
 
-如果 Hermes 已经保存了你的提供方密钥，可以把它们导入 dsh 凭据存储，而不必重新输入。该安装步骤会询问 Hermes 的安装位置（默认 `~/.hermes`），读取其 `.env`，并写入 dsh 凭据文件：
+如果 Hermes 已经保存了你的提供方密钥，可以把它们导入 dsh 凭据存储，而不必重新输入。该安装步骤会询问 Hermes 的安装位置（默认 `~/.hermes`），读取其 `.env`，写入 dsh 凭据文件，并把每个识别出的提供方密钥变成一个连接（使用该提供方目录中的端点）：
 
 ```sh
 pnpm run setup:hermes
 ```
 
-它导入每个凭据形式的条目（`*_API_KEY`、`*_TOKEN`、`*_SECRET`、`*_PASSWORD`）并报告引用名；传入 `--all` 导入每个赋值，或 `--dry-run` 预览。密钥值绝不被打印。
+示例输出：
+
+```text
+Importing 6 credentials (skipping 11 non-credential)
+  imported OPENROUTER_API_KEY
+  imported NVIDIA_API_KEY
+  …
+  added connection openrouter (pi-ai, https://openrouter.ai/api/v1)
+  added connection nvidia (pi-ai, https://integrate.api.nvidia.com/v1)
+  added connection deepseek (deepseek, https://api.deepseek.com)
+```
+
+`--model <id>` 与 `--api <protocol>` 会应用到每个创建的 `pi-ai` 连接，`--keys-only` 跳过连接创建，`--all` 导入每个赋值，`--dry-run` 预览。密钥值绝不被打印。
 
 ### 说明
 
 - API 密钥保存在私有文件中（`$DSH_HOME/.credentials.yaml`，权限 `0600`），绝不写入 profile 配置。
+- `--key` 是可选的：当引用已在凭据存储中时（例如在 `pnpm run setup:hermes` 之后）可省略。
 - 连接名使用小写加连字符（`my-profile`，而不是 `My Profile`）。
 - `use` 与 `create` 写入的是普通的 profile 补丁行；连接文档本身位于 `$DSH_HOME/connections.yaml`，不含任何密钥。
 - 设计与验证记录：[reports/RR-W22-20261114.md](reports/RR-W22-20261114.md)。

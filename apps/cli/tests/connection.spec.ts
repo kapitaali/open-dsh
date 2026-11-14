@@ -114,10 +114,15 @@ it('keeps an existing pi-ai provider when applying another connection', async ()
   expect(patch).toContain('nous:')
 })
 
-it('rejects a pi-ai connection without a model', async () => {
-  const { stderr } = fixture()
-  expect(await runConnection(['add', 'nous', '--url', 'https://x.example', '--key', 'sk-test', '--route', 'pi-ai'])).toBe(1)
-  expect(output(stderr)).toContain('--model is required')
+it('applies a pi-ai connection without a model, deferring to the catalog', async () => {
+  const { home } = fixture()
+  expect(await runConnection(['add', 'nous', '--url', 'https://inference.example/v1', '--key', 'sk-test', '--route', 'pi-ai'])).toBe(0)
+
+  expect(await runConnection(['use', 'tui', 'nous'])).toBe(0)
+  const patch = readFileSync(join(home, 'profiles', 'tui', 'cordis.patch.yml'), 'utf8')
+  expect(patch).toContain('id: llm-pi-ai')
+  expect(patch).toContain('apiKeyEnv: NOUS_API_KEY')
+  expect(patch).not.toContain('id: agent-default-model')
 })
 
 it('rejects an unknown route', async () => {
@@ -160,10 +165,20 @@ it('rejects an unknown connection on use', async () => {
   expect(output(stderr)).toContain('no connection named "nope"')
 })
 
+it('saves a connection without --key, relying on a stored reference', async () => {
+  const { home, stdout } = fixture()
+  expect(await runConnection(['add', 'acme', '--url', 'https://gateway.acme.example'])).toBe(0)
+  expect(output(stdout)).toContain('no --key given')
+  const connections = readFileSync(join(home, 'connections.yaml'), 'utf8')
+  expect(connections).toContain('apiKeyEnv: ACME_API_KEY')
+  const credentials = existsSync(join(home, '.credentials.yaml')) ? readFileSync(join(home, '.credentials.yaml'), 'utf8') : ''
+  expect(credentials).not.toContain('ACME_API_KEY')
+})
+
 it('rejects a missing required flag', async () => {
   const { stderr } = fixture()
-  expect(await runConnection(['add', 'acme', '--url', 'https://x.example'])).toBe(1)
-  expect(output(stderr)).toContain('--key is required')
+  expect(await runConnection(['add', 'acme'])).toBe(1)
+  expect(output(stderr)).toContain('--url is required')
 })
 
 it('rejects an unknown action', async () => {

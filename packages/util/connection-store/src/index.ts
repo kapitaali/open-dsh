@@ -52,7 +52,7 @@ export interface Connection {
    * `llm-pi-ai` provider route (OpenAI-compatible and other wires).
    */
   readonly route: ConnectionRoute
-  /** `pi-ai` route model id; required when `route` is `pi-ai`. */
+  /** `pi-ai` route model id; when omitted, the route defers to the installed catalog. */
   readonly model?: string
   /** `pi-ai` wire protocol; defaults to `openai-completions`. */
   readonly api?: string
@@ -165,9 +165,6 @@ export function parseConnectionsDocument(text: string, filename: string): Connec
     const model = optionalString(record, 'model', filename)
     const api = optionalString(record, 'api', filename)
     const contextWindow = optionalPositiveInt(record, 'contextWindow', filename)
-    if (route === 'pi-ai' && model === undefined) {
-      throw new Error(`connection-store: connection "${name}" at ${filename} needs a model for route "pi-ai"`)
-    }
     if (seen.has(name)) {
       throw new Error(`connection-store: duplicate connection name "${name}" at ${filename}`)
     }

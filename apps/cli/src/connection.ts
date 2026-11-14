@@ -80,23 +80,26 @@ function applyDeepSeekConnection(document: Document, connection: Connection): vo
 }
 
 function applyPiAiConnection(document: Document, connection: Connection): void {
-  const model = connection.model
-  if (model === undefined) throw new Error(`connection "${connection.name}" needs a model for route "pi-ai"`)
   const provider: Record<string, unknown> = {
     displayName: connection.name,
     apiKeyEnv: connection.apiKeyEnv,
     api: connection.api ?? 'openai-completions',
     baseURL: connection.baseURL,
-    models: [{
-      id: model,
-      name: model,
+  }
+  if (connection.model !== undefined) {
+    provider.models = [{
+      id: connection.model,
+      name: connection.model,
       ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
-    }],
+    }]
   }
   const piAiIndex = ensureRow(document, LLM_PI_AI_ROW)
   document.setIn([piAiIndex, 'config', 'providers', connection.name], document.createNode(provider))
+  // Without a model the route defers to the installed catalog, so there is no
+  // default selection to write yet.
+  if (connection.model === undefined) return
   const defaultIndex = ensureRow(document, AGENT_DEFAULT_MODEL_ROW)
-  document.setIn([defaultIndex, 'config'], document.createNode({ provider: connection.name, model }))
+  document.setIn([defaultIndex, 'config'], document.createNode({ provider: connection.name, model: connection.model }))
 }
 
 /** Index of the last patch row matching `row`, or -1. */
@@ -185,9 +188,6 @@ function connectionFromFlags(name: string, url: string, flags: Readonly<Record<s
   const api = flags['api']
   const rawWindow = flags['context-window']
   const contextWindow = rawWindow === undefined ? undefined : parsePositiveInt(rawWindow, '--context-window')
-  if (route === 'pi-ai' && model === undefined) {
-    throw new Error('--model is required when --route is pi-ai')
-  }
   return {
     name,
     baseURL: url,
@@ -207,12 +207,17 @@ function parsePositiveInt(raw: string, flag: string): number {
 
 async function addConnection(args: readonly string[]): Promise<number> {
   const { positionals, flags } = parseArgs(args)
-  const name = requirePositional(positionals, 0, 'add <name> --url <url> --key <key>')
+  const name = requirePositional(positionals, 0, 'add <name> --url <url> [--key <key>]')
   const url = requireFlag(flags, 'url')
-  const key = requireFlag(flags, 'key')
+  const key = optionalFlag(flags, 'key')
   assertConnectionName(name)
   const connection = connectionFromFlags(name, url, flags)
   await saveConnection(connection)
+  if (key === undefined) {
+    process.stdout.write(`dsh: saved connection "${name}" (${url}) as ${connection.apiKeyEnv}`
+      + ' — no --key given, so that reference must already be stored (pnpm run setup:hermes imports Hermes keys)\n')
+    return 0
+  }
   await storeConnectionKey(connection.apiKeyEnv, key)
   process.stdout.write(`dsh: saved connection "${name}" (${url}) as ${connection.apiKeyEnv}\n`)
   return 0
@@ -345,8 +350,13 @@ function requireFlag(flags: Readonly<Record<string, string>>, name: string): str
   return value
 }
 
+function optionalFlag(flags: Readonly<Record<string, string>>, name: string): string | undefined {
+  const value = flags[name]
+  return value === undefined || value === '' ? undefined : value
+}
+
 const USAGE = `Usage:
-  dsh connection add <name> --url <url> --key <key>       save a connection and its API key
+  dsh connection add <name> --url <url> [--key <key>]     save a connection (key optional if already stored)
   dsh connection use <profile> <name>                     apply a connection to a profile
   dsh connection list                                     list saved connections
   dsh connection show <name>                              show one connection

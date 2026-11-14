@@ -81,7 +81,7 @@ dsh connection remove <name>
 
 ### Importing keys from Hermes
 
-If Hermes already holds your provider keys, import them into the dsh credential store instead of retyping them. The setup step asks where Hermes is installed (default `~/.hermes`), reads its `.env`, writes the dsh credential file, and turns each recognised provider key into a connection using the provider's catalog endpoint:
+If Hermes already holds your provider keys, import them into the dsh credential store instead of retyping them. The setup step asks where Hermes is installed (default `~/.hermes`), reads its `.env` **and** its `auth.json` portal logins, writes the dsh credential file, and turns each recognised provider key into a connection using the provider's catalog endpoint:
 
 ```sh
 pnpm run setup:hermes

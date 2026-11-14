@@ -1,6 +1,6 @@
 /** The Hermes credential import setup step. */
 import { describe, expect, it } from 'vitest'
-import { connectionForKey, expandHome, parseArgs, parseEnvFile } from './import-hermes-credentials.ts'
+import { connectionForKey, expandHome, parseArgs, parseAuthProviders, parseEnvFile } from './import-hermes-credentials.ts'
 
 describe('parseEnvFile', () => {
   it('reads assignments in file order and drops comments and blanks', () => {
@@ -58,6 +58,28 @@ describe('parseArgs', () => {
   it('reports a missing flag value and an unknown flag', () => {
     expect(parseArgs(['--hermes-home'])).toBe('--hermes-home needs a value')
     expect(parseArgs(['--nope'])).toBe('unknown argument "--nope"')
+  })
+})
+
+describe('parseAuthProviders', () => {
+  it('reads each provider endpoint and access token', () => {
+    const providers = parseAuthProviders(JSON.stringify({
+      version: 1,
+      providers: {
+        nous: {
+          access_token: 'tok',
+          inference_base_url: 'https://inference-api.nousresearch.com/v1',
+        },
+      },
+    }))
+    expect(providers).toEqual([
+      { name: 'nous', baseURL: 'https://inference-api.nousresearch.com/v1', ref: 'NOUS_ACCESS_TOKEN', token: 'tok' },
+    ])
+  })
+
+  it('skips providers without an endpoint or token, and non-JSON', () => {
+    expect(parseAuthProviders(JSON.stringify({ providers: { incomplete: { access_token: 't' } } }))).toEqual([])
+    expect(parseAuthProviders('not json')).toBeUndefined()
   })
 })
 

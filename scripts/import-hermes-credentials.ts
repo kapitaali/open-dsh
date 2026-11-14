@@ -18,6 +18,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PROVIDER_DATA } from '@deepseek-ai/dsh-llm-pi-ai'
 import {
+  isConnectionName,
   readConnections,
   storeConnectionKey,
   writeConnections,
@@ -150,6 +151,51 @@ export function connectionForKey(key: string, model?: string, api?: string): Con
   return undefined
 }
 
+/** One OAuth provider endpoint declared by a Hermes auth document. */
+interface AuthProvider {
+  /** Provider id as Hermes names it; becomes the connection name. */
+  readonly name: string
+  /** Inference endpoint root. */
+  readonly baseURL: string
+  /** Credential reference the access token is stored under. */
+  readonly ref: string
+  /** The access token value. */
+  readonly token: string
+}
+
+/**
+ * Read the OAuth provider endpoints out of a Hermes `auth.json`.
+ *
+ * Hermes keeps portal logins under `providers.<id>` with an `inference_base_url`;
+ * that endpoint plus its access token is a connection, exactly like an `.env` key
+ * plus a catalog endpoint. Returns undefined when the document is absent or not
+ * JSON, and skips providers that declare no endpoint or no token.
+ * @param text - the auth document's contents.
+ * @returns one entry per usable provider.
+ */
+export function parseAuthProviders(text: string): AuthProvider[] | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== 'object' || parsed === null) return undefined
+  const providers = (parsed as Record<string, unknown>)['providers']
+  if (typeof providers !== 'object' || providers === null) return undefined
+  const out: AuthProvider[] = []
+  for (const [name, value] of Object.entries(providers as Record<string, unknown>)) {
+    if (typeof value !== 'object' || value === null) continue
+    const record = value as Record<string, unknown>
+    const baseURL = record['inference_base_url']
+    const token = record['access_token']
+    if (typeof baseURL !== 'string' || baseURL.length === 0) continue
+    if (typeof token !== 'string' || token.length === 0) continue
+    out.push({ name, baseURL, ref: `${name.toUpperCase().replace(/-/g, '_')}_ACCESS_TOKEN`, token })
+  }
+  return out
+}
+
 /** Ask one question on stdin with a default. */
 async function ask(question: string, fallback: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
@@ -201,6 +247,16 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (!options.dryRun) await storeConnectionKey(entry.key, entry.value, options.dshHome)
     process.stdout.write(`  ${options.dryRun ? 'would import' : 'imported'} ${entry.key}\n`)
   }
+  // Hermes portal logins live in auth.json, not .env: the endpoint plus its
+  // access token is a connection of the same shape.
+  const authPath = join(hermesHome, 'auth.json')
+  const authProviders = existsSync(authPath)
+    ? parseAuthProviders(readFileSync(authPath, 'utf8')) ?? []
+    : []
+  for (const provider of authProviders) {
+    if (!options.dryRun) await storeConnectionKey(provider.ref, provider.token, options.dshHome)
+    process.stdout.write(`  ${options.dryRun ? 'would import' : 'imported'} ${provider.ref} (Hermes ${provider.name} token)\n`)
+  }
   if (options.keysOnly) return 0
 
   // A recognised provider key plus its catalog endpoint is already a connection.
@@ -211,6 +267,21 @@ export async function main(argv: readonly string[]): Promise<number> {
   for (const entry of selected) {
     const connection = connectionForKey(entry.key, options.model, options.api)
     if (connection === undefined) continue
+    if (!options.dryRun) byName.set(connection.name, connection)
+    added++
+    process.stdout.write(`  ${options.dryRun ? 'would add' : 'added'} connection ${connection.name}`
+      + ` (${connection.route}, ${connection.baseURL})\n`)
+  }
+  for (const provider of authProviders) {
+    if (!isConnectionName(provider.name)) continue
+    const connection: Connection = {
+      name: provider.name,
+      baseURL: provider.baseURL,
+      apiKeyEnv: provider.ref,
+      route: 'pi-ai',
+      ...options.model === undefined ? {} : { model: options.model },
+      ...options.api === undefined ? {} : { api: options.api },
+    }
     if (!options.dryRun) byName.set(connection.name, connection)
     added++
     process.stdout.write(`  ${options.dryRun ? 'would add' : 'added'} connection ${connection.name}`

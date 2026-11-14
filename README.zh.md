@@ -87,7 +87,7 @@ dsh connection remove <name>
 
 ### 从 Hermes 导入密钥
 
-如果 Hermes 已经保存了你的提供方密钥，可以把它们导入 dsh 凭据存储，而不必重新输入。该安装步骤会询问 Hermes 的安装位置（默认 `~/.hermes`），读取其 `.env`，写入 dsh 凭据文件，并把每个识别出的提供方密钥变成一个连接（使用该提供方目录中的端点）：
+如果 Hermes 已经保存了你的提供方密钥，可以把它们导入 dsh 凭据存储，而不必重新输入。该安装步骤会询问 Hermes 的安装位置（默认 `~/.hermes`），读取其 `.env` **以及** `auth.json` 中的门户登录，写入 dsh 凭据文件，并把每个识别出的提供方密钥变成一个连接（使用该提供方目录中的端点）：
 
 ```sh
 pnpm run setup:hermes

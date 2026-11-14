@@ -98,6 +98,11 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   const path = resolveConnectionsPath(options.dshHome)
   const document = await readConnections(path)
+  if (document.connections.length === 0) {
+    process.stderr.write(`refresh-connection-catalog: no connections in ${path}`
+      + ' — run pnpm run setup:hermes, or dsh connection add <name> --url <url>\n')
+    return 1
+  }
   const targets = options.names.length === 0
     ? document.connections
     : document.connections.filter(connection => options.names.includes(connection.name))

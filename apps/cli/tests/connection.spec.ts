@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished, vi, type MockInstance } from 'vitest'
-import { runConnection } from '../src/connection.ts'
+import { runConnection, ensureProfileForConnection } from '../src/connection.ts'
 
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), 'cli-connection-'))
@@ -112,6 +112,28 @@ it('keeps an existing pi-ai provider when applying another connection', async ()
   const patch = readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')
   expect(patch).toContain('keepme:')
   expect(patch).toContain('nous:')
+})
+
+it('creates the profile from a template when a same-named connection exists', async () => {
+  const { home, stdout } = fixture()
+  expect(await runConnection(['add', 'nous', '--url', 'https://inference.example/v1', '--key', 'sk-test'])).toBe(0)
+
+  expect(await ensureProfileForConnection('nous')).toBe(true)
+  expect(output(stdout)).toContain('created profile "nous"')
+  const manifest = JSON.parse(readFileSync(join(home, 'profiles', 'nous', 'package.json'), 'utf8')) as {
+    dsh: { profile: { bundles: string[] } }
+  }
+  expect(manifest.dsh.profile.bundles).toContain('@deepseek-ai/dsh-web-app')
+  const patch = readFileSync(join(home, 'profiles', 'nous', 'cordis.patch.yml'), 'utf8')
+  expect(patch).toContain('apiKeyEnv: NOUS_API_KEY')
+
+  // Idempotent: an existing profile is left alone.
+  expect(await ensureProfileForConnection('nous')).toBe(false)
+})
+
+it('leaves a missing profile alone when no connection matches', async () => {
+  fixture()
+  expect(await ensureProfileForConnection('ghost')).toBe(false)
 })
 
 it('creates the profile from a shipped template when applying a connection', async () => {

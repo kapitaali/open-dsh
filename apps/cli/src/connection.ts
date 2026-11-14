@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh/connection
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isMap, isSeq, parseDocument, type Document } from 'yaml'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
@@ -168,6 +168,36 @@ export async function runConnection(args: readonly string[]): Promise<number> {
 /** Derive the credential reference for a connection name. */
 function credentialRefFor(name: string): string {
   return `${name.toUpperCase().replace(/-/g, '_')}_API_KEY`
+}
+
+/** Template a brand-new profile is created from when one is needed. */
+const DEFAULT_PROFILE_TEMPLATE = process.env.DSH_PROFILE_TEMPLATE ?? 'web'
+
+/**
+ * Make `dsh --profile <name> …` work straight after a connection is imported.
+ *
+ * When the profile directory is missing but a connection of that name exists,
+ * create the profile from a shipped template and apply the connection — so
+ * `pnpm dsh --profile nous web` behaves like
+ * `pnpm dsh connection use nous nous --from-default-profile web`.
+ * Does nothing when the profile already exists or no connection matches (the
+ * launcher then reports its usual "profile does not exist").
+ * @param profile - profile name.
+ * @returns whether this call created the profile.
+ */
+export async function ensureProfileForConnection(profile: string): Promise<boolean> {
+  if (existsSync(join(resolveProfileDir(profile), 'package.json'))) return false
+  const document = await readConnections(resolveConnectionsPath())
+  const connection = findConnection(document, profile)
+  if (connection === undefined) return false
+  const template = Object.hasOwn(PROFILE_TEMPLATES, DEFAULT_PROFILE_TEMPLATE)
+    ? DEFAULT_PROFILE_TEMPLATE
+    : 'web'
+  initProfile(resolveProfileDir(profile), PROFILE_TEMPLATES[template]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+  await applyConnectionToProfile(profile, connection)
+  process.stdout.write(`dsh: created profile "${profile}" from the ${template} template`
+    + ` and applied connection "${connection.name}"\n`)
+  return true
 }
 
 /** Store one connection, replacing any existing connection of the same name. */

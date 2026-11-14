@@ -30,6 +30,10 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
 
   switch (invocation.mode) {
     case 'profile': {
+      // A connection of the same name is enough to stand the profile up, so a
+      // freshly imported connection is usable without a separate `connection use`.
+      const { ensureProfileForConnection } = await import('./connection.ts')
+      await ensureProfileForConnection(invocation.profile)
       const { runProfile } = await import('./profile-boot.ts')
       try {
         await runProfile({

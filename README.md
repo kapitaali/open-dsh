@@ -52,8 +52,10 @@ Run these through the `dsh` launcher: `pnpm dsh …` from a source checkout, or 
 
 ```sh
 dsh connection create my-profile --url https://my-endpoint.example --key sk-…
-dsh --profile my-profile
+dsh my-profile
 ```
+
+Booting a name that is not yet a profile works too: `dsh <name>` creates the profile from the `web` template and applies the connection of that name (override the template with `DSH_PROFILE_TEMPLATE=headless`, or do it by hand with `dsh connection use <name> <name> --from-default-profile web`).
 
 ### Or point an existing profile at a saved connection
 
@@ -66,7 +68,7 @@ dsh connection use my-profile my-endpoint
 
 ```sh
 dsh connection use my-profile my-endpoint --from-default-profile web
-dsh --profile my-profile web
+dsh my-profile
 ```
 
 ### Choosing the wire protocol

@@ -58,8 +58,10 @@ pnpm dsh web
 
 ```sh
 dsh connection create my-profile --url https://my-endpoint.example --key sk-…
-dsh --profile my-profile
+dsh my-profile
 ```
+
+启动一个尚不存在的名字为 profile 也可以：`dsh <name>` 会从 `web` 模板创建 profile，并应用同名连接（用 `DSH_PROFILE_TEMPLATE=headless` 覆盖模板，或手动执行 `dsh connection use <name> <name> --from-default-profile web`）。
 
 ### 或者把已有 profile 指向一个已保存的连接
 
@@ -72,7 +74,7 @@ dsh connection use my-profile my-endpoint
 
 ```sh
 dsh connection use my-profile my-endpoint --from-default-profile web
-dsh --profile my-profile web
+dsh my-profile
 ```
 
 ### 选择线路协议

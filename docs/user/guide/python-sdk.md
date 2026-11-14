@@ -22,15 +22,15 @@ This tutorial installs the published Python SDK, runs the shipped standalone min
 ::: code-group
 
 ```sh [Linux/macOS]
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
+git clone https://github.com/kapitaali/open-dsh.git
+cd open-dsh
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install deepseek-harness-sdk
 ```
 
 ```powershell [Windows PowerShell]
-git clone https://github.com/deepseek-ai/deepseek-harness.git
+git clone https://github.com/kapitaali/open-dsh.git
 Set-Location deepseek-harness
 py -3.10 -m venv .venv
 .venv\Scripts\Activate.ps1

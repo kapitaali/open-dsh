@@ -20,6 +20,9 @@
 /deepseek-harness/connection-profiles:
   en: 733cd760bc65fda3
   zh: c93fe546708c1745
+/deepseek-harness/connection-profiles/quick-start:
+  en: a3d7fef708a662c8
+  zh: 891ed8d5f768be69
 /deepseek-harness/connection-profiles/create-a-profile-that-uses-a-connection:
   en: 3d8c5c4baf6422a2
   zh: 607a01fe3c4877c3
@@ -29,6 +32,9 @@
 /deepseek-harness/connection-profiles/choosing-the-wire-protocol:
   en: 49c59b786589a2d4
   zh: c0eb96fcca366ba2
+/deepseek-harness/connection-profiles/choosing-a-model:
+  en: 800b507eb9012492
+  zh: 82d762cf785fc6c2
 /deepseek-harness/connection-profiles/managing-connections:
   en: 368982b6c637fdbb
   zh: ac02906c4e224fb3

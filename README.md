@@ -48,6 +48,16 @@ pnpm dsh web
 
 Run these through the `dsh` launcher: `pnpm dsh …` from a source checkout, or plain `dsh` once `@deepseek-ai/dsh` is installed from npm.
 
+### Quick start
+
+```sh
+pnpm run setup:hermes
+pnpm run refresh:connections
+pnpm dsh nous
+```
+
+Then pick a model in the composer: the connection's provider lists what its endpoint advertises.
+
 ### Create a profile that uses a connection
 
 ```sh
@@ -80,6 +90,19 @@ dsh connection create nvidia --url https://integrate.api.nvidia.com/v1 --key nva
   --route pi-ai --model nvidia/nemotron-3.5-super-vl-120b-a12b
 ```
 
+### Choosing a model
+
+A `pi-ai` connection may omit `--model`; the route then defers to the provider's installed catalog and the composer lists what the endpoint advertises. A headless run has no composer, so give it one:
+
+```sh
+dsh connection add nous-luna --url https://inference-api.nousresearch.com/v1 --key <token> \
+  --route pi-ai --model openai/gpt-6-luna
+dsh connection use nh nous-luna --from-default-profile headless
+dsh nh "Reply with exactly: OK"
+```
+
+`DSH_PROFILE_TEMPLATE` (default `web`) selects the template when a profile is created implicitly.
+
 ### Managing connections
 
 ```sh
@@ -106,6 +129,7 @@ Importing 6 credentials (skipping 11 non-credential)
   added connection openrouter (pi-ai, https://openrouter.ai/api/v1)
   added connection nvidia (pi-ai, https://integrate.api.nvidia.com/v1)
   added connection deepseek (deepseek, https://api.deepseek.com)
+  added connection nous (pi-ai, https://inference-api.nousresearch.com/v1)
 ```
 
 `--model <id>` and `--api <protocol>` apply to every created `pi-ai` connection, `--keys-only` skips connection creation, `--all` imports every assignment, and `--dry-run` previews. Values are never printed.

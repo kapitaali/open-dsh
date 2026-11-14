@@ -54,6 +54,16 @@ pnpm dsh web
 
 请通过 `dsh` 启动器运行这些命令：在源码检出中用 `pnpm dsh …`，通过 npm 安装 `@deepseek-ai/dsh` 后直接用 `dsh`。
 
+### 快速开始
+
+```sh
+pnpm run setup:hermes
+pnpm run refresh:connections
+pnpm dsh nous
+```
+
+然后在 composer 中选择一个模型：连接的 provider 会列出其端点所广播的内容。
+
 ### 创建一个使用连接的 profile
 
 ```sh
@@ -86,6 +96,19 @@ dsh connection create nvidia --url https://integrate.api.nvidia.com/v1 --key nva
   --route pi-ai --model nvidia/nemotron-3.5-super-vl-120b-a12b
 ```
 
+### 选择模型
+
+`pi-ai` 连接可以省略 `--model`；此时路由会推迟到提供方已安装的目录，composer 会列出端点所广播的内容。headless 运行没有 composer，所以要为它指定一个模型：
+
+```sh
+dsh connection add nous-luna --url https://inference-api.nousresearch.com/v1 --key <token> \
+  --route pi-ai --model openai/gpt-6-luna
+dsh connection use nh nous-luna --from-default-profile headless
+dsh nh "Reply with exactly: OK"
+```
+
+当 profile 被隐式创建时，`DSH_PROFILE_TEMPLATE`（默认 `web`）选择模板。
+
 ### 管理连接
 
 ```sh
@@ -112,6 +135,7 @@ Importing 6 credentials (skipping 11 non-credential)
   added connection openrouter (pi-ai, https://openrouter.ai/api/v1)
   added connection nvidia (pi-ai, https://integrate.api.nvidia.com/v1)
   added connection deepseek (deepseek, https://api.deepseek.com)
+  added connection nous (pi-ai, https://inference-api.nousresearch.com/v1)
 ```
 
 `--model <id>` 与 `--api <protocol>` 会应用到每个创建的 `pi-ai` 连接，`--keys-only` 跳过连接创建，`--all` 导入每个赋值，`--dry-run` 预览。密钥值绝不被打印。

@@ -48,6 +48,7 @@ it('applies a connection to a profile patch', async () => {
   stdout.mockClear()
 
   expect(await runConnection(['use', 'tui', 'acme'])).toBe(0)
+  expect(existsSync(join(home, 'profiles', 'tui', 'package.json'))).toBe(true)
   const patch = readFileSync(join(home, 'profiles', 'tui', 'cordis.patch.yml'), 'utf8')
   expect(patch).toContain('id: llm-deepseek')
   expect(patch).toContain('baseURL: https://gateway.acme.example')

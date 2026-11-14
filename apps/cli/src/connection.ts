@@ -108,6 +108,9 @@ async function useConnection(args: readonly string[]): Promise<number> {
   const document = await readConnections(resolveConnectionsPath())
   const connection = findConnection(document, name)
   if (connection === undefined) throw new Error(`no connection named "${name}"`)
+  // Initialize the profile directory first: a patch file alone is not a bootable
+  // profile, and the launcher expects its manifest and pnpm settings.
+  initProfile(resolveProfileDir(profile), DEFAULT_PROFILE_BUNDLES)
   await applyConnectionToProfile(profile, connection)
   process.stdout.write(`dsh: profile "${profile}" now uses connection "${name}" (${connection.baseURL})\n`)
   return 0

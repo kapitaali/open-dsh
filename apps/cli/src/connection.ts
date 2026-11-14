@@ -230,15 +230,16 @@ async function addConnection(args: readonly string[]): Promise<number> {
 }
 
 async function useConnection(args: readonly string[]): Promise<number> {
-  const { positionals } = parseArgs(args)
+  const { positionals, flags } = parseArgs(args)
   const profile = requirePositional(positionals, 0, 'use <profile> <name>')
   const name = requirePositional(positionals, 1, 'use <profile> <name>')
   const document = await readConnections(resolveConnectionsPath())
   const connection = findConnection(document, name)
   if (connection === undefined) throw new Error(`no connection named "${name}"`)
   // Initialize the profile directory first: a patch file alone is not a bootable
-  // profile, and the launcher expects its manifest and pnpm settings.
-  initProfile(resolveProfileDir(profile), DEFAULT_PROFILE_BUNDLES)
+  // profile, and the launcher expects its manifest and pnpm settings. A shipped
+  // template gives it the application bundles (web, headless, …).
+  initProfile(resolveProfileDir(profile), profileTemplate(flags['from-default-profile']))
   await applyConnectionToProfile(profile, connection)
   process.stdout.write(`dsh: profile "${profile}" now uses connection "${name}" (${connection.baseURL})\n`)
   return 0
@@ -363,7 +364,8 @@ function optionalFlag(flags: Readonly<Record<string, string>>, name: string): st
 
 const USAGE = `Usage:
   dsh connection add <name> --url <url> [--key <key>]     save a connection (key optional if already stored)
-  dsh connection use <profile> <name>                     apply a connection to a profile
+  dsh connection use <profile> <name> [--from-default-profile <tpl>]
+                                                         apply a connection; a shipped template gives the profile its app bundles
   dsh connection list                                     list saved connections
   dsh connection show <name>                              show one connection
   dsh connection remove <name>                            remove a connection and its key

@@ -114,6 +114,23 @@ it('keeps an existing pi-ai provider when applying another connection', async ()
   expect(patch).toContain('nous:')
 })
 
+it('creates the profile from a shipped template when applying a connection', async () => {
+  const { home } = fixture()
+  expect(await runConnection(['add', 'acme', '--url', 'https://gateway.acme.example', '--key', 'sk-test'])).toBe(0)
+  expect(await runConnection(['use', 'web-profile', 'acme', '--from-default-profile', 'web'])).toBe(0)
+  const manifest = JSON.parse(readFileSync(join(home, 'profiles', 'web-profile', 'package.json'), 'utf8')) as {
+    dsh: { profile: { bundles: string[] } }
+  }
+  expect(manifest.dsh.profile.bundles).toContain('@deepseek-ai/dsh-web-app')
+})
+
+it('rejects an unknown template when applying a connection', async () => {
+  const { stderr } = fixture()
+  expect(await runConnection(['add', 'acme', '--url', 'https://x.example', '--key', 'sk-test'])).toBe(0)
+  expect(await runConnection(['use', 'wp', 'acme', '--from-default-profile', 'nope'])).toBe(1)
+  expect(output(stderr)).toContain('unknown default profile')
+})
+
 it('applies a pi-ai connection without a model, deferring to the catalog', async () => {
   const { home } = fixture()
   expect(await runConnection(['add', 'nous', '--url', 'https://inference.example/v1', '--key', 'sk-test', '--route', 'pi-ai'])).toBe(0)

@@ -62,6 +62,13 @@ dsh connection add my-endpoint --url https://my-endpoint.example --key sk-…
 dsh connection use my-profile my-endpoint
 ```
 
+`use` creates the profile directory if it is missing. Pass `--from-default-profile <web|headless|sdk|acp>` to give a brand-new profile that template's application bundles — without it the profile gets only the base composition and has no server to boot:
+
+```sh
+dsh connection use my-profile my-endpoint --from-default-profile web
+dsh --profile my-profile web
+```
+
 ### Choosing the wire protocol
 
 `--route` selects how the profile applies the connection. The default is `deepseek`, which speaks the Anthropic Messages wire used by the DeepSeek official API. For an OpenAI-compatible endpoint — NVIDIA NIM, Nous Portal, most gateways — pass `--route pi-ai` and a model:

@@ -68,6 +68,13 @@ dsh connection add my-endpoint --url https://my-endpoint.example --key sk-…
 dsh connection use my-profile my-endpoint
 ```
 
+如果 profile 目录不存在，`use` 会创建它。传入 `--from-default-profile <web|headless|sdk|acp>`，可让一个全新的 profile 获得该模板的应用 bundle——不传的话，profile 只会得到 base 组合，没有可启动的服务器：
+
+```sh
+dsh connection use my-profile my-endpoint --from-default-profile web
+dsh --profile my-profile web
+```
+
 ### 选择线路协议
 
 `--route` 选择 profile 应用连接的方式。默认是 `deepseek`，使用 DeepSeek 官方 API 所用的 Anthropic Messages 线路。对于 OpenAI 兼容的端点（NVIDIA NIM、Nous Portal、大多数网关），传入 `--route pi-ai` 与一个模型：

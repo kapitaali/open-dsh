@@ -92,6 +92,8 @@ export type {
 } from './config.ts'
 export { supportedProtocols } from './provider.ts'
 export { PROVIDER_DATA } from './provider-data.ts'
+export { discoverModels } from './discovery.ts'
+export type { StoredModelDiscoveryProfile } from './discovery.ts'
 
 export const name = 'llm-pi-ai'
 export const inject = ['llm']

@@ -86,7 +86,13 @@ function applyPiAiConnection(document: Document, connection: Connection): void {
     api: connection.api ?? 'openai-completions',
     baseURL: connection.baseURL,
   }
-  if (connection.model !== undefined) {
+  if (connection.models !== undefined && connection.models.length > 0) {
+    provider.models = connection.models.map(id => ({
+      id,
+      name: id,
+      ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
+    }))
+  } else if (connection.model !== undefined) {
     provider.models = [{
       id: connection.model,
       name: connection.model,

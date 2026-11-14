@@ -6,6 +6,7 @@ import {
   findConnection,
   isConnectionName,
   parseConnectionsDocument,
+  readConnectionKey,
   readConnections,
   removeConnectionKey,
   resolveConnectionsPath,
@@ -120,6 +121,25 @@ describe('connection route', () => {
       'file',
     )
     expect(document.connections[0]?.model).toBeUndefined()
+  })
+
+  it('reads and writes a pi-ai model list', () => {
+    const connection: Connection = {
+      name: 'nous',
+      baseURL: 'https://x.example',
+      apiKeyEnv: 'NOUS_API_KEY',
+      route: 'pi-ai',
+      models: ['m/1', 'm/2'],
+    }
+    const parsed = parseConnectionsDocument(serializeConnections({ version: 1, connections: [connection] }), 'file')
+    expect(parsed.connections[0]).toEqual(connection)
+  })
+
+  it('refuses a models entry that is not a non-empty string', () => {
+    expect(() => parseConnectionsDocument(
+      'version: 1\nconnections:\n  - name: acme\n    baseURL: https://x.example\n    apiKeyEnv: ACME_API_KEY\n    route: pi-ai\n    models: [1]\n',
+      'file',
+    )).toThrow(/array of non-empty strings/)
   })
 
   it('refuses a non-positive context window', () => {
@@ -239,5 +259,12 @@ describe('storeConnectionKey / removeConnectionKey', () => {
     await expect(removeConnectionKey('ACME_API_KEY')).resolves.toBeUndefined()
     const text = await readFile(path, 'utf8')
     expect(text).toContain('records: {}')
+  })
+
+  it('reads a stored key back and reports an absent one', async () => {
+    await tempHome()
+    expect(await readConnectionKey('ACME_API_KEY')).toBeUndefined()
+    await storeConnectionKey('ACME_API_KEY', 'sk-test')
+    expect(await readConnectionKey('ACME_API_KEY')).toBe('sk-test')
   })
 })

@@ -107,6 +107,16 @@ Importing 6 credentials (skipping 11 non-credential)
 
 `--model <id>` 与 `--api <protocol>` 会应用到每个创建的 `pi-ai` 连接，`--keys-only` 跳过连接创建，`--all` 导入每个赋值，`--dry-run` 预览。密钥值绝不被打印。
 
+### 刷新模型目录
+
+连接的模型列表可以从它自己的端点拉取：
+
+```sh
+pnpm run refresh:connections
+```
+
+对于每个 `pi-ai` 连接，这会使用已存储的凭据询问端点（`GET {baseURL}/models`），并把广播的 id 保存在连接上，供 `dsh connection use` 写入 profile。传入 `--prefer-catalog` 改为从已安装的注册表回答已知提供方（无网络调用，且带有列表不提供的容量），指定一个或多个连接名以限制运行范围，或 `--dry-run` 预览。`deepseek` 路由上的连接没有端点列表，会被跳过。
+
 ### 说明
 
 - API 密钥保存在私有文件中（`$DSH_HOME/.credentials.yaml`，权限 `0600`），绝不写入 profile 配置。

@@ -101,6 +101,16 @@ Importing 6 credentials (skipping 11 non-credential)
 
 `--model <id>` and `--api <protocol>` apply to every created `pi-ai` connection, `--keys-only` skips connection creation, `--all` imports every assignment, and `--dry-run` previews. Values are never printed.
 
+### Refreshing the model catalog
+
+A connection's model list can be pulled from its own endpoint:
+
+```sh
+pnpm run refresh:connections
+```
+
+For each `pi-ai` connection this asks the endpoint (`GET {baseURL}/models`) with the stored credential and stores the advertised ids on the connection, ready for `dsh connection use` to write into the profile. Pass `--prefer-catalog` to answer known providers from the installed registry instead (no network call, and it carries capacities a listing omits), name one or more connections to limit the run, or `--dry-run` to preview. Connections on the `deepseek` route have no endpoint listing and are skipped.
+
 ### Notes
 
 - The API key is stored in a private file (`$DSH_HOME/.credentials.yaml`, mode `0600`), never in the profile configuration.

@@ -54,6 +54,8 @@ export interface Connection {
   readonly route: ConnectionRoute
   /** `pi-ai` route model id; when omitted, the route defers to the installed catalog. */
   readonly model?: string
+  /** `pi-ai` route model ids discovered from the endpoint; replaces the catalog when present. */
+  readonly models?: readonly string[]
   /** `pi-ai` wire protocol; defaults to `openai-completions`. */
   readonly api?: string
   /** `pi-ai` route context window; defaults to the route's own default. */
@@ -163,6 +165,7 @@ export function parseConnectionsDocument(text: string, filename: string): Connec
       throw new Error(`connection-store: route "${route}" at ${filename} must be "deepseek" or "pi-ai"`)
     }
     const model = optionalString(record, 'model', filename)
+    const models = optionalStringList(record, 'models', filename)
     const api = optionalString(record, 'api', filename)
     const contextWindow = optionalPositiveInt(record, 'contextWindow', filename)
     if (seen.has(name)) {
@@ -175,6 +178,7 @@ export function parseConnectionsDocument(text: string, filename: string): Connec
       apiKeyEnv,
       route,
       ...model === undefined ? {} : { model },
+      ...models === undefined ? {} : { models },
       ...api === undefined ? {} : { api },
       ...contextWindow === undefined ? {} : { contextWindow },
     })
@@ -199,6 +203,7 @@ export function serializeConnections(document: ConnectionDocument): string {
       apiKeyEnv: connection.apiKeyEnv,
       route: connection.route,
       ...connection.model === undefined ? {} : { model: connection.model },
+      ...connection.models === undefined ? {} : { models: connection.models },
       ...connection.api === undefined ? {} : { api: connection.api },
       ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
     })),
@@ -288,6 +293,25 @@ export async function removeConnectionKey(ref: string, dshHome?: string): Promis
   }, { waitMs: 120_000 })
 }
 
+/**
+ * Read one stored connection key.
+ *
+ * Read-only counterpart of {@link storeConnectionKey}; used by callers that need
+ * the value to talk to the provider, such as a model-listing request. Returns
+ * undefined when the reference is absent or the file cannot be read.
+ * @param ref - credential reference (the connection's `apiKeyEnv`).
+ * @param dshHome - Harness home; defaults to `$DSH_HOME` or `~/.dsh`.
+ * @returns the stored value, or undefined.
+ */
+export async function readConnectionKey(ref: string, dshHome?: string): Promise<string | undefined> {
+  const path = resolveCredentialsPath(dshHome)
+  const text = await readExistingText(path)
+  if (text === undefined) return undefined
+  const document = mutableCredentialDocument(text, path)
+  const value = document.getIn(['refs', ref])
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 async function readExistingText(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, 'utf8')
@@ -331,6 +355,15 @@ function optionalPositiveInt(record: Record<string, unknown>, key: string, filen
     throw new Error(`connection-store: "${key}" at ${filename} must be a positive integer`)
   }
   return value
+}
+
+function optionalStringList(record: Record<string, unknown>, key: string, filename: string): string[] | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || item.length === 0)) {
+    throw new Error(`connection-store: "${key}" at ${filename} must be an array of non-empty strings`)
+  }
+  return value as string[]
 }
 
 function assertValidBaseURL(baseURL: string, filename: string): void {

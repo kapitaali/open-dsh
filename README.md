@@ -79,6 +79,16 @@ dsh connection show <name>
 dsh connection remove <name>
 ```
 
+### Importing keys from Hermes
+
+If Hermes already holds your provider keys, import them into the dsh credential store instead of retyping them. The setup step asks where Hermes is installed (default `~/.hermes`), reads its `.env`, and writes the dsh credential file:
+
+```sh
+pnpm run setup:hermes
+```
+
+It imports every credential-shaped entry (`*_API_KEY`, `*_TOKEN`, `*_SECRET`, `*_PASSWORD`) and reports the reference names; pass `--all` to import every assignment, or `--dry-run` to preview. Values are never printed.
+
 ### Notes
 
 - The API key is stored in a private file (`$DSH_HOME/.credentials.yaml`, mode `0600`), never in the profile configuration.

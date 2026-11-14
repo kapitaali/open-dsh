@@ -19,8 +19,8 @@
  * @module @deepseek-ai/dsh-connection-store
  */
 
-import { readFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { mkdir, readFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { Document, parseDocument, stringify, type YAMLError } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isCredentialRefName } from '@deepseek-ai/dsh-credentials'
@@ -265,6 +265,7 @@ export async function storeConnectionKey(ref: string, value: string, dshHome?: s
     throw new Error(`connection-store: "${ref}" must be a POSIX environment-variable name`)
   }
   const path = resolveCredentialsPath(dshHome)
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   await withFileLock(path, async () => {
     const text = await readExistingText(path)
     const document = mutableCredentialDocument(text, path)
@@ -280,6 +281,7 @@ export async function storeConnectionKey(ref: string, value: string, dshHome?: s
  */
 export async function removeConnectionKey(ref: string, dshHome?: string): Promise<void> {
   const path = resolveCredentialsPath(dshHome)
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   await withFileLock(path, async () => {
     const text = await readExistingText(path)
     if (text === undefined) return

@@ -85,6 +85,16 @@ dsh connection show <name>
 dsh connection remove <name>
 ```
 
+### 从 Hermes 导入密钥
+
+如果 Hermes 已经保存了你的提供方密钥，可以把它们导入 dsh 凭据存储，而不必重新输入。该安装步骤会询问 Hermes 的安装位置（默认 `~/.hermes`），读取其 `.env`，并写入 dsh 凭据文件：
+
+```sh
+pnpm run setup:hermes
+```
+
+它导入每个凭据形式的条目（`*_API_KEY`、`*_TOKEN`、`*_SECRET`、`*_PASSWORD`）并报告引用名；传入 `--all` 导入每个赋值，或 `--dry-run` 预览。密钥值绝不被打印。
+
 ### 说明
 
 - API 密钥保存在私有文件中（`$DSH_HOME/.credentials.yaml`，权限 `0600`），绝不写入 profile 配置。

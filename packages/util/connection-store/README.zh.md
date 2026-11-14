@@ -57,10 +57,18 @@ await storeConnectionKey(ref, value)
 | 字段 | 语法 | 含义 |
 |---|---|---|
 | `name` | `^[a-z][a-z0-9-]*$` | 用户输入的句柄；在文档中唯一 |
-| `baseURL` | HTTP(S) URL，无凭据/查询/片段 | 兼容 Messages 的端点根 |
+| `baseURL` | HTTP(S) URL，无凭据/查询/片段 | 端点根 |
 | `apiKeyEnv` | POSIX 环境变量名 | 由凭据接缝按请求解析的凭据引用 |
+| `route` | `deepseek` 或 `pi-ai` | 配置文件在哪里应用它；默认 `deepseek` |
+| `model` | 非空字符串 | `pi-ai` 路由模型 id；`route` 为 `pi-ai` 时必填 |
+| `api` | pi-ai 协议 id | `pi-ai` 线路协议；默认 `openai-completions` |
+| `contextWindow` | 正整数 | `pi-ai` 路由上下文窗口 |
 
 API 密钥值绝不出现在本文档中。它保存在凭据存储的 `apiKeyEnv` 下，因此轮换密钥不会触及连接。
+
+### 路由
+
+`deepseek` 连接通过写入 `llm-deepseek` 行的 config 来应用，该行使用 Anthropic Messages 线路（DeepSeek 官方 API 与兼容 Messages 的网关）。`pi-ai` 连接通过把一个 provider 路由合并进 `llm-pi-ai` 行、并将 `agent-default-model` 指向它来应用，可到达 OpenAI 兼容与其他线路。应用侧位于 `dsh connection` 命令中；本包只保存字段。
 
 ### 需要规划的失败
 

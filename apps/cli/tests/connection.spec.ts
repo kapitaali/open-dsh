@@ -71,6 +71,61 @@ it('preserves comments and other rows when applying a connection', async () => {
   expect(patch).toContain('id: llm-deepseek')
 })
 
+it('applies a pi-ai connection as a route plus the default model', async () => {
+  const { home } = fixture()
+  expect(await runConnection([
+    'add', 'nous', '--url', 'https://inference.example/v1', '--key', 'sk-test',
+    '--route', 'pi-ai', '--model', 'm/1', '--context-window', '200000',
+  ])).toBe(0)
+
+  expect(await runConnection(['use', 'tui', 'nous'])).toBe(0)
+  const patch = readFileSync(join(home, 'profiles', 'tui', 'cordis.patch.yml'), 'utf8')
+  expect(patch).toContain('id: llm-pi-ai')
+  expect(patch).toContain('providers:')
+  expect(patch).toContain('apiKeyEnv: NOUS_API_KEY')
+  expect(patch).toContain('baseURL: https://inference.example/v1')
+  expect(patch).toContain('contextWindow: 200000')
+  expect(patch).toContain('id: agent-default-model')
+  expect(patch).toContain('provider: nous')
+  expect(patch).toContain('model: m/1')
+})
+
+it('keeps an existing pi-ai provider when applying another connection', async () => {
+  const { home } = fixture()
+  const dir = join(home, 'profiles', 'tui')
+  rmSync(dir, { recursive: true, force: true })
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'cordis.patch.yml'), [
+    '- id: llm-pi-ai',
+    '  name: \'@deepseek-ai/dsh-llm-pi-ai\'',
+    '  config:',
+    '    providers:',
+    '      keepme:',
+    '        apiKeyEnv: KEEPME_API_KEY',
+    '        baseURL: https://keep.example/v1',
+    '',
+  ].join('\n'), { mode: 0o600 })
+
+  expect(await runConnection(['add', 'nous', '--url', 'https://inference.example/v1', '--key', 'sk-test', '--route', 'pi-ai', '--model', 'm/1'])).toBe(0)
+  expect(await runConnection(['use', 'tui', 'nous'])).toBe(0)
+  const patch = readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')
+  expect(patch).toContain('keepme:')
+  expect(patch).toContain('nous:')
+})
+
+it('rejects a pi-ai connection without a model', async () => {
+  const { stderr } = fixture()
+  expect(await runConnection(['add', 'nous', '--url', 'https://x.example', '--key', 'sk-test', '--route', 'pi-ai'])).toBe(1)
+  expect(output(stderr)).toContain('--model is required')
+})
+
+it('rejects an unknown route', async () => {
+  const { stderr } = fixture()
+  expect(await runConnection(['add', 'nous', '--url', 'https://x.example', '--key', 'sk-test', '--route', 'other'])).toBe(1)
+  expect(output(stderr)).toContain('--route must be')
+})
+
 it('removes a connection and its key', async () => {
   const { home, stdout } = fixture()
   expect(await runConnection(['add', 'acme', '--url', 'https://gateway.acme.example', '--key', 'sk-test'])).toBe(0)

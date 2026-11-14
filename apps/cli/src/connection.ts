@@ -11,7 +11,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isMap, isSeq, parseDocument } from 'yaml'
+import { isMap, isSeq, parseDocument, type Document } from 'yaml'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { DEFAULT_PROFILE_BUNDLES, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import { initProfile, PROFILE_PATCH_FILENAME, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
@@ -26,11 +26,98 @@ import {
   type Connection,
 } from '@deepseek-ai/dsh-connection-store'
 
-/** The profile row a connection is applied through. */
-const LLM_DEEPSEEK_ROW = {
-  id: 'llm-deepseek',
-  name: '@deepseek-ai/dsh-llm-deepseek-api-key',
-} as const
+/** The profile rows a connection is applied through. */
+const LLM_DEEPSEEK_ROW = { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key' } as const
+const LLM_PI_AI_ROW = { id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai' } as const
+const AGENT_DEFAULT_MODEL_ROW = { id: 'agent-default-model', name: '@deepseek-ai/dsh-agent-default-model' } as const
+
+/** One patch row's identity. */
+interface RowRef {
+  readonly id: string
+  readonly name: string
+}
+
+/**
+ * Write one connection into a profile's patch layer. A `deepseek` connection
+ * replaces the `llm-deepseek` row's config; a `pi-ai` connection merges one
+ * provider route into the `llm-pi-ai` row and points the default model at it.
+ * Comments and `!!js` expressions outside the changed value survive; the write
+ * is atomic at owner-only permissions.
+ * @param profile - profile name.
+ * @param connection - the connection to apply.
+ */
+async function applyConnectionToProfile(profile: string, connection: Connection): Promise<void> {
+  const patchPath = join(resolveProfileDir(profile), PROFILE_PATCH_FILENAME)
+  const document = loadPatchDocument(patchPath)
+  if (connection.route === 'pi-ai') applyPiAiConnection(document, connection)
+  else applyDeepSeekConnection(document, connection)
+  await writeFileAtomic(patchPath, String(document), { mode: 0o600 })
+}
+
+function loadPatchDocument(patchPath: string): Document {
+  let text: string
+  try {
+    text = readFileSync(patchPath, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    text = '[]\n'
+  }
+  const document = parseDocument(text, {
+    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }],
+  })
+  if (document.errors[0] !== undefined) throw document.errors[0]
+  if (!isSeq(document.contents)) throw new Error(`${patchPath} must be a YAML sequence`)
+  document.contents.flow = false
+  return document
+}
+
+function applyDeepSeekConnection(document: Document, connection: Connection): void {
+  const index = ensureRow(document, LLM_DEEPSEEK_ROW)
+  document.setIn([index, 'config'], document.createNode({
+    baseURL: connection.baseURL,
+    apiKeyEnv: connection.apiKeyEnv,
+  }))
+}
+
+function applyPiAiConnection(document: Document, connection: Connection): void {
+  const model = connection.model
+  if (model === undefined) throw new Error(`connection "${connection.name}" needs a model for route "pi-ai"`)
+  const provider: Record<string, unknown> = {
+    displayName: connection.name,
+    apiKeyEnv: connection.apiKeyEnv,
+    api: connection.api ?? 'openai-completions',
+    baseURL: connection.baseURL,
+    models: [{
+      id: model,
+      name: model,
+      ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
+    }],
+  }
+  const piAiIndex = ensureRow(document, LLM_PI_AI_ROW)
+  document.setIn([piAiIndex, 'config', 'providers', connection.name], document.createNode(provider))
+  const defaultIndex = ensureRow(document, AGENT_DEFAULT_MODEL_ROW)
+  document.setIn([defaultIndex, 'config'], document.createNode({ provider: connection.name, model }))
+}
+
+/** Index of the last patch row matching `row`, or -1. */
+function findRowIndex(document: Document, row: RowRef): number {
+  const contents = document.contents
+  if (!isSeq(contents)) return -1
+  return contents.items.findLastIndex((item, itemIndex) => isMap(item)
+    && document.getIn([itemIndex, 'id']) === row.id
+    && !item.has('insert')
+    && (!item.has('name') || document.getIn([itemIndex, 'name']) === row.name))
+}
+
+/** Index of the patch row matching `row`, appending it when absent. */
+function ensureRow(document: Document, row: RowRef): number {
+  const existing = findRowIndex(document, row)
+  if (existing >= 0) return existing
+  document.add(document.createNode({ id: row.id, name: row.name }))
+  const contents = document.contents
+  if (!isSeq(contents)) throw new Error('profile patch is no longer a YAML sequence')
+  return contents.items.length - 1
+}
 
 /** Parsed command arguments: positionals plus `--flag value` pairs. */
 interface ParsedArgs {
@@ -88,13 +175,43 @@ function assertConnectionName(name: string): void {
   if (!isConnectionName(name)) throw new Error(`connection name "${name}" must match /^[a-z][a-z0-9-]*$/`)
 }
 
+/** Build a connection from the shared `add`/`create` flags. */
+function connectionFromFlags(name: string, url: string, flags: Readonly<Record<string, string>>): Connection {
+  const route = flags['route'] ?? 'deepseek'
+  if (route !== 'deepseek' && route !== 'pi-ai') {
+    throw new Error(`--route must be "deepseek" or "pi-ai", got "${route}"`)
+  }
+  const model = flags['model']
+  const api = flags['api']
+  const rawWindow = flags['context-window']
+  const contextWindow = rawWindow === undefined ? undefined : parsePositiveInt(rawWindow, '--context-window')
+  if (route === 'pi-ai' && model === undefined) {
+    throw new Error('--model is required when --route is pi-ai')
+  }
+  return {
+    name,
+    baseURL: url,
+    apiKeyEnv: credentialRefFor(name),
+    route,
+    ...model === undefined ? {} : { model },
+    ...api === undefined ? {} : { api },
+    ...contextWindow === undefined ? {} : { contextWindow },
+  }
+}
+
+function parsePositiveInt(raw: string, flag: string): number {
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${flag} must be a positive integer, got "${raw}"`)
+  return value
+}
+
 async function addConnection(args: readonly string[]): Promise<number> {
   const { positionals, flags } = parseArgs(args)
   const name = requirePositional(positionals, 0, 'add <name> --url <url> --key <key>')
   const url = requireFlag(flags, 'url')
   const key = requireFlag(flags, 'key')
   assertConnectionName(name)
-  const connection: Connection = { name, baseURL: url, apiKeyEnv: credentialRefFor(name) }
+  const connection = connectionFromFlags(name, url, flags)
   await saveConnection(connection)
   await storeConnectionKey(connection.apiKeyEnv, key)
   process.stdout.write(`dsh: saved connection "${name}" (${url}) as ${connection.apiKeyEnv}\n`)
@@ -124,7 +241,10 @@ async function listConnections(): Promise<number> {
   }
   process.stdout.write('Connections:\n')
   for (const connection of document.connections) {
-    process.stdout.write(`  ${connection.name}  ${connection.baseURL}  ${connection.apiKeyEnv}\n`)
+    const detail = connection.route === 'pi-ai' && connection.model !== undefined
+      ? `  model ${connection.model}`
+      : ''
+    process.stdout.write(`  ${connection.name}  [${connection.route}]  ${connection.baseURL}  ${connection.apiKeyEnv}${detail}\n`)
   }
   return 0
 }
@@ -135,7 +255,16 @@ async function showConnection(args: readonly string[]): Promise<number> {
   const document = await readConnections(resolveConnectionsPath())
   const connection = findConnection(document, name)
   if (connection === undefined) throw new Error(`no connection named "${name}"`)
-  process.stdout.write(`${connection.name}\n  baseURL:    ${connection.baseURL}\n  apiKeyEnv:  ${connection.apiKeyEnv}\n`)
+  const lines = [
+    connection.name,
+    `  baseURL:    ${connection.baseURL}`,
+    `  apiKeyEnv:  ${connection.apiKeyEnv}`,
+    `  route:      ${connection.route}`,
+  ]
+  if (connection.model !== undefined) lines.push(`  model:      ${connection.model}`)
+  if (connection.api !== undefined) lines.push(`  api:        ${connection.api}`)
+  if (connection.contextWindow !== undefined) lines.push(`  context:    ${connection.contextWindow}`)
+  process.stdout.write(`${lines.join('\n')}\n`)
   return 0
 }
 
@@ -162,7 +291,7 @@ async function createProfile(args: readonly string[]): Promise<number> {
   const key = requireFlag(flags, 'key')
   assertConnectionName(profile)
   initProfile(resolveProfileDir(profile), profileTemplate(flags['from-default-profile']))
-  const connection: Connection = { name: profile, baseURL: url, apiKeyEnv: credentialRefFor(profile) }
+  const connection = connectionFromFlags(profile, url, flags)
   await saveConnection(connection)
   await storeConnectionKey(connection.apiKeyEnv, key)
   await applyConnectionToProfile(profile, connection)
@@ -176,41 +305,6 @@ function profileTemplate(template: string | undefined): readonly string[] {
   const profile = PROFILE_TEMPLATES[template]
   if (profile === undefined) throw new Error(`unknown default profile "${template}"`)
   return profile.bundles
-}
-
-/**
- * Write one connection into a profile's patch layer, replacing the
- * `llm-deepseek` row's config. Comments and `!!js` expressions outside the
- * replaced value survive; the write is atomic at owner-only permissions.
- * @param profile - profile name.
- * @param connection - the connection to apply.
- */
-async function applyConnectionToProfile(profile: string, connection: Connection): Promise<void> {
-  const patchPath = join(resolveProfileDir(profile), PROFILE_PATCH_FILENAME)
-  let text: string
-  try {
-    text = readFileSync(patchPath, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    text = '[]\n'
-  }
-  const document = parseDocument(text, {
-    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }],
-  })
-  if (document.errors[0] !== undefined) throw document.errors[0]
-  if (!isSeq(document.contents)) throw new Error(`${patchPath} must be a YAML sequence`)
-  document.contents.flow = false
-  const config = { baseURL: connection.baseURL, apiKeyEnv: connection.apiKeyEnv }
-  const index = document.contents.items.findLastIndex((item, itemIndex) => isMap(item)
-    && document.getIn([itemIndex, 'id']) === LLM_DEEPSEEK_ROW.id
-    && !item.has('insert')
-    && (!item.has('name') || document.getIn([itemIndex, 'name']) === LLM_DEEPSEEK_ROW.name))
-  if (index < 0) {
-    document.add(document.createNode({ id: LLM_DEEPSEEK_ROW.id, name: LLM_DEEPSEEK_ROW.name, config }))
-  } else {
-    document.setIn([index, 'config'], document.createNode(config))
-  }
-  await writeFileAtomic(patchPath, String(document), { mode: 0o600 })
 }
 
 /** Parse positionals and `--flag value` / `--flag=value` pairs. */
@@ -257,4 +351,10 @@ const USAGE = `Usage:
   dsh connection list                                     list saved connections
   dsh connection show <name>                              show one connection
   dsh connection remove <name>                            remove a connection and its key
-  dsh connection create <profile> --url <url> --key <key> create a profile with a connection`
+  dsh connection create <profile> --url <url> --key <key> create a profile with a connection
+
+Flags:
+  --route <deepseek|pi-ai>   where the profile applies it (default deepseek)
+  --model <id>               pi-ai route model (required for pi-ai)
+  --api <protocol>           pi-ai wire protocol (default openai-completions)
+  --context-window <tokens>  pi-ai route context window`

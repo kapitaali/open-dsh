@@ -35,14 +35,29 @@ export const CONNECTIONS_DOCUMENT_VERSION = 1
 /** Grammar of a connection name: a lowercase hyphenated identifier. */
 const NAME_PATTERN = /^[a-z][a-z0-9-]*$/
 
+/** How a profile applies a connection. */
+export type ConnectionRoute = 'deepseek' | 'pi-ai'
+
 /** One named API route. */
 export interface Connection {
   /** Lowercase hyphenated handle a person types. */
   readonly name: string
-  /** Messages-compatible endpoint root; an HTTP(S) URL without credentials, query, or fragment. */
+  /** Endpoint root; an HTTP(S) URL without credentials, query, or fragment. */
   readonly baseURL: string
   /** Credential reference resolved per request; the API key lives in the credential store. */
   readonly apiKeyEnv: string
+  /**
+   * Where the profile applies the connection: `deepseek` writes the
+   * `llm-deepseek` row (Anthropic Messages wire); `pi-ai` writes an
+   * `llm-pi-ai` provider route (OpenAI-compatible and other wires).
+   */
+  readonly route: ConnectionRoute
+  /** `pi-ai` route model id; required when `route` is `pi-ai`. */
+  readonly model?: string
+  /** `pi-ai` wire protocol; defaults to `openai-completions`. */
+  readonly api?: string
+  /** `pi-ai` route context window; defaults to the route's own default. */
+  readonly contextWindow?: number
 }
 
 /** One parsed connection document. */
@@ -143,11 +158,29 @@ export function parseConnectionsDocument(text: string, filename: string): Connec
         `connection-store: apiKeyEnv "${apiKeyEnv}" at ${filename} must be a POSIX environment-variable name`,
       )
     }
+    const route = record['route'] === undefined ? 'deepseek' : requireString(record, 'route', filename)
+    if (route !== 'deepseek' && route !== 'pi-ai') {
+      throw new Error(`connection-store: route "${route}" at ${filename} must be "deepseek" or "pi-ai"`)
+    }
+    const model = optionalString(record, 'model', filename)
+    const api = optionalString(record, 'api', filename)
+    const contextWindow = optionalPositiveInt(record, 'contextWindow', filename)
+    if (route === 'pi-ai' && model === undefined) {
+      throw new Error(`connection-store: connection "${name}" at ${filename} needs a model for route "pi-ai"`)
+    }
     if (seen.has(name)) {
       throw new Error(`connection-store: duplicate connection name "${name}" at ${filename}`)
     }
     seen.add(name)
-    connections.push({ name, baseURL, apiKeyEnv })
+    connections.push({
+      name,
+      baseURL,
+      apiKeyEnv,
+      route,
+      ...model === undefined ? {} : { model },
+      ...api === undefined ? {} : { api },
+      ...contextWindow === undefined ? {} : { contextWindow },
+    })
   }
   return { version: CONNECTIONS_DOCUMENT_VERSION, connections }
 }
@@ -167,6 +200,10 @@ export function serializeConnections(document: ConnectionDocument): string {
       name: connection.name,
       baseURL: connection.baseURL,
       apiKeyEnv: connection.apiKeyEnv,
+      route: connection.route,
+      ...connection.model === undefined ? {} : { model: connection.model },
+      ...connection.api === undefined ? {} : { api: connection.api },
+      ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
     })),
   })
   return '# DeepSeek Harness connection profiles — managed by `dsh connection`.\n'
@@ -275,6 +312,24 @@ function requireString(record: Record<string, unknown>, key: string, filename: s
   const value = record[key]
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`connection-store: "${key}" at ${filename} must be a non-empty string`)
+  }
+  return value
+}
+
+function optionalString(record: Record<string, unknown>, key: string, filename: string): string | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`connection-store: "${key}" at ${filename} must be a non-empty string`)
+  }
+  return value
+}
+
+function optionalPositiveInt(record: Record<string, unknown>, key: string, filename: string): number | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`connection-store: "${key}" at ${filename} must be a positive integer`)
   }
   return value
 }

@@ -32,7 +32,7 @@ async function tempHome(): Promise<string> {
   return dir
 }
 
-const ACME: Connection = { name: 'acme', baseURL: 'https://gateway.acme.example', apiKeyEnv: 'ACME_API_KEY' }
+const ACME: Connection = { name: 'acme', baseURL: 'https://gateway.acme.example', apiKeyEnv: 'ACME_API_KEY', route: 'deepseek' }
 
 describe('isConnectionName', () => {
   it('accepts a lowercase hyphenated identifier', () => {
@@ -56,7 +56,7 @@ describe('parseConnectionsDocument', () => {
   it('reads every connection in file order', () => {
     const document = parseConnectionsDocument(serializeConnections({
       version: 1,
-      connections: [ACME, { name: 'beta', baseURL: 'https://beta.example', apiKeyEnv: 'BETA_API_KEY' }],
+      connections: [ACME, { name: 'beta', baseURL: 'https://beta.example', apiKeyEnv: 'BETA_API_KEY', route: 'deepseek' }],
     }), 'file')
     expect(document.connections.map(connection => connection.name)).toEqual(['acme', 'beta'])
   })
@@ -81,6 +81,51 @@ describe('parseConnectionsDocument', () => {
 
   it('refuses malformed YAML', () => {
     expect(() => parseConnectionsDocument('version: 1\nconnections:\n  - name: [unclosed\n', 'file')).toThrow(/invalid document/)
+  })
+})
+
+describe('connection route', () => {
+  it('defaults to deepseek when the field is absent', () => {
+    const document = parseConnectionsDocument(
+      'version: 1\nconnections:\n  - name: acme\n    baseURL: https://x.example\n    apiKeyEnv: ACME_API_KEY\n',
+      'file',
+    )
+    expect(document.connections[0]?.route).toBe('deepseek')
+  })
+
+  it('reads a pi-ai route with its model, protocol and context window', () => {
+    const connection: Connection = {
+      name: 'nous',
+      baseURL: 'https://inference.example/v1',
+      apiKeyEnv: 'NOUS_API_KEY',
+      route: 'pi-ai',
+      model: 'm/1',
+      api: 'openai-completions',
+      contextWindow: 200_000,
+    }
+    const parsed = parseConnectionsDocument(serializeConnections({ version: 1, connections: [connection] }), 'file')
+    expect(parsed.connections[0]).toEqual(connection)
+  })
+
+  it('refuses an unknown route', () => {
+    expect(() => parseConnectionsDocument(
+      'version: 1\nconnections:\n  - name: acme\n    baseURL: https://x.example\n    apiKeyEnv: ACME_API_KEY\n    route: other\n',
+      'file',
+    )).toThrow(/must be "deepseek" or "pi-ai"/)
+  })
+
+  it('refuses a pi-ai route without a model', () => {
+    expect(() => parseConnectionsDocument(
+      'version: 1\nconnections:\n  - name: acme\n    baseURL: https://x.example\n    apiKeyEnv: ACME_API_KEY\n    route: pi-ai\n',
+      'file',
+    )).toThrow(/needs a model/)
+  })
+
+  it('refuses a non-positive context window', () => {
+    expect(() => parseConnectionsDocument(
+      'version: 1\nconnections:\n  - name: acme\n    baseURL: https://x.example\n    apiKeyEnv: ACME_API_KEY\n    route: pi-ai\n    model: m/1\n    contextWindow: 0\n',
+      'file',
+    )).toThrow(/positive integer/)
   })
 })
 

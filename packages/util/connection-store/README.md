@@ -57,10 +57,18 @@ await storeConnectionKey(ref, value)
 | Field | Grammar | Meaning |
 |---|---|---|
 | `name` | `^[a-z][a-z0-9-]*$` | Handle a person types; unique in the document |
-| `baseURL` | HTTP(S) URL, no credentials/query/fragment | Messages-compatible endpoint root |
+| `baseURL` | HTTP(S) URL, no credentials/query/fragment | Endpoint root |
 | `apiKeyEnv` | POSIX environment-variable name | Credential reference resolved per request by the credential seam |
+| `route` | `deepseek` or `pi-ai` | Where the profile applies it; defaults to `deepseek` |
+| `model` | non-empty string | `pi-ai` route model id; required when `route` is `pi-ai` |
+| `api` | pi-ai protocol id | `pi-ai` wire protocol; defaults to `openai-completions` |
+| `contextWindow` | positive integer | `pi-ai` route context window |
 
 The API key value is never part of this document. It lives in the credential store under `apiKeyEnv`, so rotating a key does not touch the connection.
+
+### Routes
+
+A `deepseek` connection is applied by writing the `llm-deepseek` row's config, which speaks the Anthropic Messages wire (the DeepSeek official API and Messages-compatible gateways). A `pi-ai` connection is applied by merging one provider route into the `llm-pi-ai` row and pointing `agent-default-model` at it, which reaches OpenAI-compatible and other wires. The applying side lives in the `dsh connection` command; this package only stores the fields.
 
 ### Failures to plan for
 

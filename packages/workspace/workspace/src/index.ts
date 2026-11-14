@@ -226,8 +226,15 @@ export class WorkspaceRegistry extends Service {
       const headers = await this.listStoredHeaders()
       await this.replaceHeaderIndex(headers)
       await this.bootstrap(headers)
-    } else if (this.table.size > 0) {
-      await this.replaceHeaderIndex(await this.listStoredHeaders())
+    } else {
+      const headers = await this.listStoredHeaders()
+      await this.replaceHeaderIndex(headers)
+      // A Session written after the registry was first initialised has no
+      // Workspace. Adopt only a true orphan — one no Workspace already claims
+      // as a candidate and whose cwd has no Workspace — so candidate lists the
+      // header-validated membership projection owns stay byte-identical.
+      const claimed = new Set([...this.requireTable().entries()].flatMap(([, record]) => record.sessionIds))
+      await this.adoptOrphanedWorkspaces(headers, claimed)
     }
 
     await this.indexLiveSessions()
@@ -668,6 +675,59 @@ export class WorkspaceRegistry extends Service {
     }
     await this.requireTable().delete(pending.workspaceId)
     await this.setState({ ...state, pendingMutation: undefined })
+  }
+
+  /**
+   * Give a true orphan Session its own Workspace.
+   *
+   * The first-init {@link bootstrap} builds the registry from the headers it can
+   * see. A Session written later by a CLI or headless run lands in a per-cwd
+   * directory that no Workspace lists, so the sidebar — which groups by
+   * Workspace — never shows it. This adopts only a Session that no Workspace
+   * already claims as a candidate (`claimed`) and whose cwd has no Workspace,
+   * so candidate lists the header-validated membership projection owns stay
+   * byte-identical.
+   * @param headers - current stored Session headers.
+   * @param claimed - every Session id some Workspace already lists.
+   */
+  private async adoptOrphanedWorkspaces(
+    headers: readonly SessionHeader[],
+    claimed: ReadonlySet<SessionId>,
+  ): Promise<void> {
+    const table = this.requireTable()
+    const byPath = new Set([...table.entries()].map(([, record]) => record.path))
+    const orphans = new Map<string, SessionHeader[]>()
+    for (const header of headers) {
+      if (claimed.has(header.id)) continue
+      const path = this.sessionPaths.get(header.id)
+      if (path === undefined || byPath.has(path)) continue
+      const group = orphans.get(path)
+      if (group === undefined) orphans.set(path, [header])
+      else group.push(header)
+    }
+    const appended: WorkspaceId[] = []
+    for (const [path, group] of orphans) {
+      const id = brandString<WorkspaceId>(randomUUID())
+      const createdAt = new Date((group.map(header => header.createdAt).sort().at(-1) ?? Date.now())).toISOString()
+      await table.put(id, {
+        path,
+        title: defaultWorkspaceTitle(path),
+        sessionIds: group.map(header => header.id),
+        createdAt,
+        updatedAt: new Date().toISOString(),
+      })
+      appended.push(id)
+    }
+    if (appended.length > 0) {
+      const state = this.requireState()
+      await this.setState({
+        ...state,
+        initialized: true,
+        workspaceIds: [...state.workspaceIds, ...appended],
+        archivedSessionIds: state.archivedSessionIds,
+        pinnedSessionIds: state.pinnedSessionIds,
+      })
+    }
   }
 
   private async bootstrap(headers: readonly SessionHeader[]): Promise<void> {

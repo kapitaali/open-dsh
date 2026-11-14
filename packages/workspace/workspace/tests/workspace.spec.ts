@@ -259,17 +259,37 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
       .toEqual(['a-session', 'z-session'])
   })
 
-  it('does not rerun bootstrap for a genuinely initialized empty registry', async () => {
+  it('adopts a Session that appears after the first init, without touching claimed candidates', async () => {
     const late = await makeDir('late-cwd-only')
     const pool = new MemoryMediaPool()
     const first = await harness({ pool, sessions: [] })
     expect(first.list).toHaveBeenCalledTimes(1)
+    expect(first.registry.list()).toEqual([])
     await first.fiber.dispose()
 
     const second = await harness({ pool, sessions: [header('late', late, 100)] })
-    expect(second.list).not.toHaveBeenCalled()
-    expect(second.registry.list()).toEqual([])
-    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
+    expect(second.list).toHaveBeenCalledTimes(1)
+    expect(second.registry.list().map(workspace => workspace.path)).toEqual([late])
+    expect(second.registry.list()[0]?.sessionIds).toEqual([brandString<SessionId>('late')])
+  })
+
+  it('leaves a claimed candidate out of a new Workspace for its cwd', async () => {
+    const owned = await makeDir('owned')
+    const elsewhere = await makeDir('projection-elsewhere')
+    const id = brandString<WorkspaceId>('00000000-0000-4000-8000-000000000001')
+    const pool = storedPool(
+      [[id, record(owned, ['good', 'mismatch', 'missing'])]],
+      { initialized: true, workspaceIds: [id] },
+    )
+    // 'cwd-only' carries the stored Workspace's path, so it is not an orphan:
+    // adopting it would rewrite a candidate list the membership projection owns.
+    const result = await harness({
+      pool,
+      sessions: [header('good', owned), header('mismatch', owned), header('cwd-only', owned)],
+    })
+    expect(storedRecord(pool, id).sessionIds).toEqual(['good', 'mismatch', 'missing'])
+    expect(result.registry.list().map(workspace => workspace.path)).toEqual([owned])
+    void elsewhere
   })
 
   it('reuses partial records after a bootstrap record write fails', async () => {

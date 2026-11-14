@@ -360,6 +360,10 @@
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
 
+    # Human `/reasoning`: show or switch this session's reasoning effort.
+    - id: command-reasoning
+      name: '@deepseek-ai/dsh-command-reasoning'
+
     - id: subagent
       name: '@deepseek-ai/dsh-subagent'
 

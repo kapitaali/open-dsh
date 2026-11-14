@@ -92,9 +92,10 @@ dsh connection create nvidia --url https://integrate.api.nvidia.com/v1 --key nva
 
 ### Choosing a model
 
-A `pi-ai` connection may omit `--model`; the route then defers to the provider's installed catalog and the composer lists what the endpoint advertises. A headless run has no composer, so give it one:
+A `pi-ai` connection may omit `--model`; the route then defers to the provider's installed catalog and the composer lists what the endpoint advertises. A headless run has no composer, so give it one — and note that a connection without a model leaves the profile's default route untouched, so the command says so rather than silently calling a different provider:
 
 ```sh
+pnpm run refresh:connections
 dsh connection add nous-luna --url https://inference-api.nousresearch.com/v1 --key <token> \
   --route pi-ai --model openai/gpt-6-luna
 dsh connection use nh nous-luna --from-default-profile headless
@@ -143,6 +144,10 @@ pnpm run refresh:connections
 ```
 
 For each `pi-ai` connection this asks the endpoint (`GET {baseURL}/models`) with the stored credential and stores the advertised ids on the connection, ready for `dsh connection use` to write into the profile. Pass `--prefer-catalog` to answer known providers from the installed registry instead (no network call, and it carries capacities a listing omits), name one or more connections to limit the run, or `--dry-run` to preview. Connections on the `deepseek` route have no endpoint listing and are skipped.
+
+### Switching the reasoning effort
+
+`/reasoning` shows or changes this session's reasoning effort — `/reasoning show` reports the current provider, model, and effort, and `/reasoning high` (or `off`, `minimal`, `low`, `medium`, `xhigh`, `max`, `ultra`) records the change for the session's later steps. It never reaches the model.
 
 ### Notes
 

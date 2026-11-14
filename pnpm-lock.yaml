@@ -2520,6 +2520,9 @@ importers:
       '@deepseek-ai/dsh-command-goal':
         specifier: workspace:*
         version: link:../../goal/command-goal
+      '@deepseek-ai/dsh-command-reasoning':
+        specifier: workspace:*
+        version: link:../../interaction/command-reasoning
       '@deepseek-ai/dsh-commands':
         specifier: workspace:*
         version: link:../../interaction/commands
@@ -13979,6 +13982,31 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:*
         version: link:../../util/home-paths
+
+  packages/interaction/command-reasoning:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:~
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:~
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
 
   packages/interaction/commands:
     dependencies:

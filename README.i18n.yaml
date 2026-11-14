@@ -33,8 +33,8 @@
   en: 49c59b786589a2d4
   zh: c0eb96fcca366ba2
 /deepseek-harness/connection-profiles/choosing-a-model:
-  en: 800b507eb9012492
-  zh: 82d762cf785fc6c2
+  en: 20264b654c18e2bb
+  zh: fd32fcbf7a279a0f
 /deepseek-harness/connection-profiles/managing-connections:
   en: 368982b6c637fdbb
   zh: ac02906c4e224fb3
@@ -44,6 +44,9 @@
 /deepseek-harness/connection-profiles/refreshing-the-model-catalog:
   en: 38b8b8fbd01452cb
   zh: a2e9b16b54d42dee
+/deepseek-harness/connection-profiles/switching-the-reasoning-effort:
+  en: 17e01d11187f9354
+  zh: dd49db96dbf52cfb
 /deepseek-harness/connection-profiles/notes:
   en: 01861b52af8c0468
   zh: f06c9b4adedc590d

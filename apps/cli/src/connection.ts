@@ -52,6 +52,11 @@ async function applyConnectionToProfile(profile: string, connection: Connection)
   if (connection.route === 'pi-ai') applyPiAiConnection(document, connection)
   else applyDeepSeekConnection(document, connection)
   await writeFileAtomic(patchPath, String(document), { mode: 0o600 })
+  if (connection.route === 'pi-ai' && connection.model === undefined
+    && (connection.models === undefined || connection.models.length === 0)) {
+    process.stdout.write(`dsh: connection "${connection.name}" names no model, so the profile still defaults to its previous route.\n`)
+    process.stdout.write('     run pnpm run refresh:connections, or dsh connection use <profile> <name> --model <id>\n')
+  }
 }
 
 function loadPatchDocument(patchPath: string): Document {
@@ -102,10 +107,11 @@ function applyPiAiConnection(document: Document, connection: Connection): void {
   const piAiIndex = ensureRow(document, LLM_PI_AI_ROW)
   document.setIn([piAiIndex, 'config', 'providers', connection.name], document.createNode(provider))
   // Without a model the route defers to the installed catalog, so there is no
-  // default selection to write yet.
-  if (connection.model === undefined) return
+  // default selection to write yet. A refreshed model list supplies one.
+  const model = connection.model ?? connection.models?.[0]
+  if (model === undefined) return
   const defaultIndex = ensureRow(document, AGENT_DEFAULT_MODEL_ROW)
-  document.setIn([defaultIndex, 'config'], document.createNode({ provider: connection.name, model: connection.model }))
+  document.setIn([defaultIndex, 'config'], document.createNode({ provider: connection.name, model }))
 }
 
 /** Index of the last patch row matching `row`, or -1. */

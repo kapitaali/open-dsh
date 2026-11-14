@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/interaction/command-reasoning/README.md
+/:
+  en: 4aeee48fe88edd92
+  zh: b915c4ade2fe4911
+/deepseek-ai-dsh-command-reasoning:
+  en: cc09ecf7d60efc48
+  zh: 5a9a892b7b7ae3fd
+/deepseek-ai-dsh-command-reasoning/summary:
+  en: d15601377b8d1937
+  zh: 4627b97b59c58fcd
+/deepseek-ai-dsh-command-reasoning/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-command-reasoning/use-this-package:
+  en: 322b5b9a0af26b9a
+  zh: 80686d78e12edd13
+/deepseek-ai-dsh-command-reasoning/understand-the-implementation:
+  en: 42b15ac6321706aa
+  zh: 4ed0861911abaf5d
+/deepseek-ai-dsh-command-reasoning/understand-the-implementation/source-map:
+  en: 6f009a019cec474e
+  zh: 6a6ed56731720a9a
+/deepseek-ai-dsh-command-reasoning/understand-the-implementation/behaviour:
+  en: d4ea82907e631506
+  zh: 06d7f054a6921f25
+/deepseek-ai-dsh-command-reasoning/further-exploration:
+  en: 41868a3dd942004d
+  zh: 2b7080d807824692
+/deepseek-ai-dsh-command-reasoning/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-command-reasoning/model-experience/human-reasoning-control:
+  en: ceea5eebf5b3b730
+  zh: 823032afa13238fb
+/deepseek-ai-dsh-command-reasoning/model-experience/human-reasoning-control/what-the-model-sees:
+  en: dd910a75df7650b9
+  zh: a9043e0fd53b79c0
+/deepseek-ai-dsh-command-reasoning/model-experience/human-reasoning-control/token-effect:
+  en: 13b1807e3ff1845f
+  zh: 7963103270f75188
+/deepseek-ai-dsh-command-reasoning/model-experience/human-reasoning-control/kv-cache-effect:
+  en: ac412d72fe0f92cd
+  zh: d3243b76161f78ac
+/deepseek-ai-dsh-command-reasoning/known-limitations-and-deferred-work:
+  en: a4d53227a3e4c7e1
+  zh: cda28c7f74af87e6
+/deepseek-ai-dsh-command-reasoning/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98

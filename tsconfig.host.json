@@ -528,6 +528,7 @@
     { "path": "./packages/compaction/compaction" },
     { "path": "./packages/compaction/compaction-basic" },
     { "path": "./packages/compaction/command-compact" },
+    { "path": "./packages/interaction/command-reasoning" },
     { "path": "./packages/compaction/compaction-tool-result-pruner" },
     { "path": "./packages/compaction/compaction-image-offload" },
     { "path": "./packages/web/web" },

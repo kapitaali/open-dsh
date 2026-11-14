@@ -136,6 +136,15 @@ it('leaves a missing profile alone when no connection matches', async () => {
   expect(await ensureProfileForConnection('ghost')).toBe(false)
 })
 
+it('warns and leaves the default route alone when a pi-ai connection has no model', async () => {
+  const { home, stdout } = fixture()
+  expect(await runConnection(['add', 'nous', '--url', 'https://inference.example/v1', '--key', 'sk-test', '--route', 'pi-ai'])).toBe(0)
+  expect(await runConnection(['use', 'wp', 'nous'])).toBe(0)
+  expect(output(stdout)).toContain('names no model')
+  const patch = readFileSync(join(home, 'profiles', 'wp', 'cordis.patch.yml'), 'utf8')
+  expect(patch).not.toContain('id: agent-default-model')
+})
+
 it('creates the profile from a shipped template when applying a connection', async () => {
   const { home } = fixture()
   expect(await runConnection(['add', 'acme', '--url', 'https://gateway.acme.example', '--key', 'sk-test'])).toBe(0)

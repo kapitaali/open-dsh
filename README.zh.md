@@ -98,9 +98,10 @@ dsh connection create nvidia --url https://integrate.api.nvidia.com/v1 --key nva
 
 ### 选择模型
 
-`pi-ai` 连接可以省略 `--model`；此时路由会推迟到提供方已安装的目录，composer 会列出端点所广播的内容。headless 运行没有 composer，所以要为它指定一个模型：
+`pi-ai` 连接可以省略 `--model`；此时路由会推迟到提供方已安装的目录，composer 会列出端点所广播的内容。headless 运行没有 composer，所以要为它指定一个——注意，没有模型的连接不会改动 profile 的默认路由，因此命令会明确说明，而不是静默调用另一个提供方：
 
 ```sh
+pnpm run refresh:connections
 dsh connection add nous-luna --url https://inference-api.nousresearch.com/v1 --key <token> \
   --route pi-ai --model openai/gpt-6-luna
 dsh connection use nh nous-luna --from-default-profile headless
@@ -149,6 +150,10 @@ pnpm run refresh:connections
 ```
 
 对于每个 `pi-ai` 连接，这会使用已存储的凭据询问端点（`GET {baseURL}/models`），并把广播的 id 保存在连接上，供 `dsh connection use` 写入 profile。传入 `--prefer-catalog` 改为从已安装的注册表回答已知提供方（无网络调用，且带有列表不提供的容量），指定一个或多个连接名以限制运行范围，或 `--dry-run` 预览。`deepseek` 路由上的连接没有端点列表，会被跳过。
+
+### 切换推理力度
+
+`/reasoning` 显示或更改当前会话的推理力度——`/reasoning show` 报告当前的 provider、模型与力度，`/reasoning high`（或 `off`、`minimal`、`low`、`medium`、`xhigh`、`max`、`ultra`）为会话后续步骤记录该更改。它不会到达模型。
 
 ### 说明
 

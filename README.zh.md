@@ -52,6 +52,8 @@ pnpm dsh web
 
 `open-dsh` 增加了**连接配置（connection profiles）**：一个命名的 API 端点加上一个 API 密钥，profile 用它们替代默认的 DeepSeek 连接。默认 profile 不受影响——只有你显式指向某个连接的 profile 才会不同。
 
+请通过 `dsh` 启动器运行这些命令：在源码检出中用 `pnpm dsh …`，通过 npm 安装 `@deepseek-ai/dsh` 后直接用 `dsh`。
+
 ### 创建一个使用连接的 profile
 
 ```sh

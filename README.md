@@ -46,6 +46,8 @@ pnpm dsh web
 
 `open-dsh` adds **connection profiles**: a named API endpoint plus an API key that a profile uses instead of the default DeepSeek connection. The default profile is unchanged — only a profile you point at a connection behaves differently.
 
+Run these through the `dsh` launcher: `pnpm dsh …` from a source checkout, or plain `dsh` once `@deepseek-ai/dsh` is installed from npm.
+
 ### Create a profile that uses a connection
 
 ```sh

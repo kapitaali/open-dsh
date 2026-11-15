@@ -18,13 +18,16 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PROVIDER_DATA } from '@deepseek-ai/dsh-llm-pi-ai'
 import {
+  applyConnectionToProfile,
   isConnectionName,
   readConnections,
+  resolveConnectionsPath,
   storeConnectionKey,
   writeConnections,
-  resolveConnectionsPath,
   type Connection,
 } from '@deepseek-ai/dsh-connection-store'
+import { initProfile, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
+import { DEFAULT_PROFILE_BUNDLES, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 
 /** A key whose value is a secret worth importing. */
 const CREDENTIAL_KEY = /_(?:API_KEY|TOKEN|SECRET|PASSWORD)$/i
@@ -267,10 +270,12 @@ export async function main(argv: readonly string[]): Promise<number> {
   for (const entry of selected) {
     const connection = connectionForKey(entry.key, options.model, options.api)
     if (connection === undefined) continue
-    if (!options.dryRun) byName.set(connection.name, connection)
-    added++
-    process.stdout.write(`  ${options.dryRun ? 'would add' : 'added'} connection ${connection.name}`
-      + ` (${connection.route}, ${connection.baseURL})\n`)
+    if (!options.dryRun && !byName.has(connection.name)) {
+      byName.set(connection.name, connection)
+      added++
+      process.stdout.write(`  ${options.dryRun ? 'would add' : 'added'} connection ${connection.name}`
+        + ` (${connection.route}, ${connection.baseURL})\n`)
+    }
   }
   for (const provider of authProviders) {
     if (!isConnectionName(provider.name)) continue
@@ -282,15 +287,34 @@ export async function main(argv: readonly string[]): Promise<number> {
       ...options.model === undefined ? {} : { model: options.model },
       ...options.api === undefined ? {} : { api: options.api },
     }
-    if (!options.dryRun) byName.set(connection.name, connection)
-    added++
-    process.stdout.write(`  ${options.dryRun ? 'would add' : 'added'} connection ${connection.name}`
-      + ` (${connection.route}, ${connection.baseURL})\n`)
+    if (!options.dryRun && !byName.has(connection.name)) {
+      byName.set(connection.name, connection)
+      added++
+      process.stdout.write(`  ${options.dryRun ? 'would add' : 'added'} connection ${connection.name}`
+        + ` (${connection.route}, ${connection.baseURL})\n`)
+    }
   }
   if (added > 0 && !options.dryRun) {
     await writeConnections(path, { version: document.version, connections: [...byName.values()] })
   }
   if (added === 0) process.stdout.write('  no recognised provider keys; no connections added\n')
+
+  // Apply every saved connection to a profile of the same name, so a freshly
+  // imported connection is usable without a separate `dsh connection use`.
+  if (!options.dryRun) {
+    const template = process.env.DSH_PROFILE_TEMPLATE ?? 'web'
+    const bundles = PROFILE_TEMPLATES[template]?.bundles ?? DEFAULT_PROFILE_BUNDLES
+    for (const connection of byName.values()) {
+      try {
+        const profileDir = resolveProfileDir(connection.name, options.dshHome)
+        initProfile(profileDir, bundles)
+        await applyConnectionToProfile(connection.name, connection, options.dshHome)
+        process.stdout.write(`  applied connection "${connection.name}" to profile "${connection.name}"\n`)
+      } catch (error) {
+        process.stdout.write(`  could not apply connection "${connection.name}": ${error instanceof Error ? error.message : String(error)}\n`)
+      }
+    }
+  }
   return 0
 }
 

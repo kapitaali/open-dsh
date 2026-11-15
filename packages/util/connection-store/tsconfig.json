@@ -15,6 +15,12 @@
       "path": "../home-paths"
     },
     {
+      "path": "../../boot/app-boot"
+    },
+    {
+      "path": "../official-bundles"
+    },
+    {
       "path": "../../credentials/credentials"
     }
   ]

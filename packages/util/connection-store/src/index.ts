@@ -19,12 +19,15 @@
  * @module @deepseek-ai/dsh-connection-store
  */
 
+import { existsSync } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { Document, parseDocument, stringify, type YAMLError } from 'yaml'
+import { Document, isMap, isSeq, parseDocument, stringify, type YAMLError } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isCredentialRefName } from '@deepseek-ai/dsh-credentials'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { initProfile, PROFILE_PATCH_FILENAME, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
+import { DEFAULT_PROFILE_BUNDLES, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 
 /** Basename of the connection document inside the harness home. */
 export const CONNECTIONS_FILENAME = 'connections.yaml'
@@ -240,6 +243,137 @@ export async function writeConnections(path: string, document: ConnectionDocumen
  */
 export function findConnection(document: ConnectionDocument, name: string): Connection | undefined {
   return document.connections.find(connection => connection.name === name)
+}
+
+/** One patch row's identity. */
+interface RowRef {
+  readonly id: string
+  readonly name: string
+}
+
+const LLM_DEEPSEEK_ROW = { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key' } as const
+const LLM_PI_AI_ROW = { id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai' } as const
+const AGENT_DEFAULT_MODEL_ROW = { id: 'agent-default-model', name: '@deepseek-ai/dsh-agent-default-model' } as const
+
+/**
+ * Write one connection into a profile's patch layer. A `deepseek` connection
+ * replaces the `llm-deepseek` row's config; a `pi-ai` connection merges one
+ * provider route into the `llm-pi-ai` row and points the default model at it.
+ * Comments and `!!js` expressions outside the changed value survive; the write
+ * is atomic at owner-only permissions.
+ * @param profile - profile name.
+ * @param connection - the connection to apply.
+ * @param dshHome - Harness home; defaults to `$DSH_HOME` or `~/.dsh`.
+ */
+export async function applyConnectionToProfile(
+  profile: string,
+  connection: Connection,
+  dshHome?: string,
+): Promise<void> {
+  const patchPath = join(resolveProfileDir(profile, dshHome), PROFILE_PATCH_FILENAME)
+  let text: string
+  try {
+    text = await readFile(patchPath, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    text = '[]\n'
+  }
+  const document = parseDocument(text, {
+    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }],
+  })
+  if (document.errors[0] !== undefined) throw document.errors[0]
+  if (!isSeq(document.contents)) throw new Error(`${patchPath} must be a YAML sequence`)
+  document.contents.flow = false
+
+  if (connection.route === 'pi-ai') applyPiAiConnection(document, connection)
+  else applyDeepSeekConnection(document, connection)
+
+  await withFileLock(patchPath, async () => {
+    await writeFileAtomic(patchPath, String(document), { mode: 0o600 })
+  })
+}
+
+function applyDeepSeekConnection(document: Document, connection: Connection): void {
+  const index = findRowIndex(document, LLM_DEEPSEEK_ROW)
+  if (index < 0) document.add(document.createNode({ id: LLM_DEEPSEEK_ROW.id, name: LLM_DEEPSEEK_ROW.name }))
+  const finalIndex = findRowIndex(document, LLM_DEEPSEEK_ROW)
+  document.setIn([finalIndex, 'config'], document.createNode({
+    baseURL: connection.baseURL,
+    apiKeyEnv: connection.apiKeyEnv,
+  }))
+}
+
+function applyPiAiConnection(document: Document, connection: Connection): void {
+  const provider: Record<string, unknown> = {
+    displayName: connection.name,
+    apiKeyEnv: connection.apiKeyEnv,
+    api: connection.api ?? 'openai-completions',
+    baseURL: connection.baseURL,
+  }
+  if (connection.models !== undefined && connection.models.length > 0) {
+    provider.models = connection.models.map(id => ({
+      id,
+      name: id,
+      ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
+      ...connection.reasoningEfforts === undefined ? {} : { reasoningEfforts: connection.reasoningEfforts },
+    }))
+  } else if (connection.model !== undefined) {
+    provider.models = [{
+      id: connection.model,
+      name: connection.model,
+      ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
+      ...connection.reasoningEfforts === undefined ? {} : { reasoningEfforts: connection.reasoningEfforts },
+    }]
+  }
+  const piAiIndex = findRowIndex(document, LLM_PI_AI_ROW)
+  if (piAiIndex < 0) document.add(document.createNode({ id: LLM_PI_AI_ROW.id, name: LLM_PI_AI_ROW.name }))
+  const finalPiAiIndex = findRowIndex(document, LLM_PI_AI_ROW)
+  document.setIn([finalPiAiIndex, 'config', 'providers', connection.name], document.createNode(provider))
+  const model = connection.model ?? connection.models?.[0]
+  if (model === undefined) return
+  const defaultIndex = findRowIndex(document, AGENT_DEFAULT_MODEL_ROW)
+  if (defaultIndex < 0) document.add(document.createNode({ id: AGENT_DEFAULT_MODEL_ROW.id, name: AGENT_DEFAULT_MODEL_ROW.name }))
+  const finalDefaultIndex = findRowIndex(document, AGENT_DEFAULT_MODEL_ROW)
+  document.setIn([finalDefaultIndex, 'config'], document.createNode({ provider: connection.name, model }))
+}
+
+/** Index of the last patch row matching `row`, or -1. */
+function findRowIndex(document: Document, row: RowRef): number {
+  const contents = document.contents
+  if (!isSeq(contents)) return -1
+  return contents.items.findLastIndex((item, itemIndex) => isMap(item)
+    && document.getIn([itemIndex, 'id']) === row.id
+    && !item.has('insert')
+    && (!item.has('name') || document.getIn([itemIndex, 'name']) === row.name))
+}
+
+/**
+ * Create a profile from a shipped template (default `web`) when it does not
+ * exist, then apply the same-named connection to it. No-op when the profile
+ * already exists — callers that want to re-apply should call
+ * `applyConnectionToProfile` directly.
+ * @param profile - profile name (matches a connection name).
+ * @param dshHome - Harness home; defaults to `$DSH_HOME` or `~/.dsh`.
+ * @returns whether the profile was created.
+ */
+export async function ensureProfileForConnection(
+  profile: string,
+  dshHome?: string,
+): Promise<boolean> {
+  const profileDir = resolveProfileDir(profile, dshHome)
+  const manifestPath = join(profileDir, 'package.json')
+  const exists = existsSync(manifestPath)
+  if (exists) return false
+
+  const document = await readConnections(resolveConnectionsPath(dshHome))
+  const connection = findConnection(document, profile)
+  if (connection === undefined) return false
+
+  const template = process.env.DSH_PROFILE_TEMPLATE ?? 'web'
+  const bundles = PROFILE_TEMPLATES[template]?.bundles ?? DEFAULT_PROFILE_BUNDLES
+  initProfile(profileDir, bundles)
+  await applyConnectionToProfile(profile, connection, dshHome)
+  return true
 }
 
 /** Basename of the credential document inside the harness home. */

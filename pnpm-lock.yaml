@@ -19067,6 +19067,13 @@ importers:
         version: link:../../../vendor/cordis
 
   packages/util/connection-store:
+    dependencies:
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:*
+        version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-official-bundles':
+        specifier: workspace:*
+        version: link:../official-bundles
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~

@@ -129,9 +129,13 @@ export async function main(argv: readonly string[]): Promise<number> {
       process.stdout.write(`  ${connection.name}: listing failed — ${error instanceof Error ? error.message : String(error)}\n`)
       continue
     }
-    next.set(connection.name, { ...connection, models: [...ids] })
+    const updated = connection.reasoningEfforts === undefined
+      ? { ...connection, reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' } }
+      : connection
+    next.set(connection.name, { ...updated, models: [...ids] })
     refreshed++
-    process.stdout.write(`  ${connection.name}: ${ids.length} models from ${options.source === 'catalog' ? 'catalog' : connection.baseURL}\n`)
+    const added = connection.reasoningEfforts === undefined ? ' (added default reasoning efforts)' : ''
+    process.stdout.write(`  ${connection.name}: ${ids.length} models from ${options.source === 'catalog' ? 'catalog' : connection.baseURL}${added}\n`)
   }
   if (options.dryRun) {
     process.stdout.write(`would update ${refreshed} connection${refreshed === 1 ? '' : 's'} (dry run)\n`)

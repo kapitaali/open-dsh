@@ -60,6 +60,11 @@ export interface Connection {
   readonly api?: string
   /** `pi-ai` route context window; defaults to the route's own default. */
   readonly contextWindow?: number
+  /**
+   * Default reasoning effort levels offered by models on this connection,
+   * applied to every model entry the connection writes into a profile patch.
+   */
+  readonly reasoningEfforts?: Partial<Record<'off' | 'low' | 'high' | 'max', string | null>>
 }
 
 /** One parsed connection document. */
@@ -168,6 +173,7 @@ export function parseConnectionsDocument(text: string, filename: string): Connec
     const models = optionalStringList(record, 'models', filename)
     const api = optionalString(record, 'api', filename)
     const contextWindow = optionalPositiveInt(record, 'contextWindow', filename)
+    const reasoningEfforts = optionalReasoningEfforts(record, 'reasoningEfforts', filename)
     if (seen.has(name)) {
       throw new Error(`connection-store: duplicate connection name "${name}" at ${filename}`)
     }
@@ -181,6 +187,7 @@ export function parseConnectionsDocument(text: string, filename: string): Connec
       ...models === undefined ? {} : { models },
       ...api === undefined ? {} : { api },
       ...contextWindow === undefined ? {} : { contextWindow },
+      ...reasoningEfforts === undefined ? {} : { reasoningEfforts },
     })
   }
   return { version: CONNECTIONS_DOCUMENT_VERSION, connections }
@@ -206,6 +213,7 @@ export function serializeConnections(document: ConnectionDocument): string {
       ...connection.models === undefined ? {} : { models: connection.models },
       ...connection.api === undefined ? {} : { api: connection.api },
       ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
+      ...connection.reasoningEfforts === undefined ? {} : { reasoningEfforts: connection.reasoningEfforts },
     })),
   })
   return '# DeepSeek Harness connection profiles — managed by `dsh connection`.\n'
@@ -364,6 +372,24 @@ function optionalStringList(record: Record<string, unknown>, key: string, filena
     throw new Error(`connection-store: "${key}" at ${filename} must be an array of non-empty strings`)
   }
   return value as string[]
+}
+
+/** Parse one connection's optional reasoningEfforts map: { off: null, low: 'low', high: 'high', max: 'max' }. */
+function optionalReasoningEfforts(record: Record<string, unknown>, key: string, filename: string): Partial<Record<'off' | 'low' | 'high' | 'max', string | null>> | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`connection-store: "${key}" at ${filename} must be a mapping of level to wire value`)
+  }
+  const efforts = value as Record<string, unknown>
+  const result: Partial<Record<'off' | 'low' | 'high' | 'max', string | null>> = {}
+  for (const [level, wire] of Object.entries(efforts)) {
+    if (wire !== null && typeof wire !== 'string') {
+      throw new Error(`connection-store: "${key}.${level}" at ${filename} must be a string or null`)
+    }
+    result[level as 'off' | 'low' | 'high' | 'max'] = wire
+  }
+  return result
 }
 
 function assertValidBaseURL(baseURL: string, filename: string): void {

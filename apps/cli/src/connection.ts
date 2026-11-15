@@ -96,6 +96,7 @@ function applyPiAiConnection(document: Document, connection: Connection): void {
       id,
       name: id,
       ...connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow },
+      ...connection.reasoningEfforts === undefined ? {} : { reasoningEfforts: connection.reasoningEfforts },
     }))
   } else if (connection.model !== undefined) {
     provider.models = [{

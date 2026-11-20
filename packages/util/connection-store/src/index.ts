@@ -289,7 +289,12 @@ export async function applyConnectionToProfile(
   else applyDeepSeekConnection(document, connection)
 
   await withFileLock(patchPath, async () => {
-    await writeFileAtomic(patchPath, String(document), { mode: 0o600 })
+    // Strip aliases: the runtime loader's YAML parser has a default maxAliasCount
+    // of 100, and one connection writes the same reasoningEfforts map into
+    // hundreds of models. Serialize with aliasDuplicateObjects: false so each
+    // model carries its own inline map and the patch always loads.
+    const text = stringify(document.toJSON(), { aliasDuplicateObjects: false, lineWidth: -1 })
+    await writeFileAtomic(patchPath, text, { mode: 0o600 })
   })
 }
 

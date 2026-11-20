@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-command-reasoning",
   "description": "Human-facing /reasoning command to switch the session's reasoning effort",
-  "version": "0.2.2-rc.3",
+  "version": "0.2.2-rc.5",
   "publishConfig": {
     "access": "public"
   },

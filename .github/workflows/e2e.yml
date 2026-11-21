@@ -110,7 +110,7 @@ jobs:
         env:
           # Prefer the OpenRouter secret; fall back to the old secret name whose
           # value the owner may have replaced with an OpenRouter key.
-          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
@@ -138,7 +138,7 @@ jobs:
       # DeepSeek model ids; this targeted run is the ported gate.
       - name: E2E tests (OpenRouter Messages, free model)
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_BASE_URL: https://openrouter.ai/api
           DEEPSEEK_E2E_MODEL: inclusionai/ling-3.2-flash:free
           DSH_PRIMARY_RUNTIME: ${{ github.workspace }}/.cache/e2e-office/primary-runtime

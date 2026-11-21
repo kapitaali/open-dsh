@@ -26,16 +26,18 @@ import * as Messages from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import DeepSeekAuth from '@deepseek-ai/dsh-deepseek-auth'
 import { DeepSeekFilesClient } from '../src/files-api.ts'
 import { MESSAGES_FILES_BETA } from '../src/messages-api.ts'
-import { assemble, options, user, sourceModuleLoader } from './helpers.ts'
+import { MODEL, assemble, options, user, sourceModuleLoader } from './helpers.ts'
 
 const IN_HISTORY_MODEL = process.env.DEEPSEEK_IN_HISTORY_MODEL
+const BASE_URL = process.env.DEEPSEEK_BASE_URL ?? Protocol.PUBLIC_BASE_URL
+const IS_OFFICIAL = BASE_URL === Protocol.PUBLIC_BASE_URL
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
 })
-async function boot(models?: Messages.Options['models'], baseURL = Protocol.PUBLIC_BASE_URL) {
+async function boot(models?: Messages.Options['models'], baseURL = BASE_URL) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-messages-e2e-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   vi.stubEnv('DSH_HOME', home)
@@ -46,15 +48,30 @@ async function boot(models?: Messages.Options['models'], baseURL = Protocol.PUBL
   await ctx.plugin(Messages, {
     baseURL,
     maxTokens: 4096,
-    ...models === undefined ? {} : { models },
+    ...models === undefined ? (IS_OFFICIAL ? {} : { models: [{ id: MODEL }] }) : { models },
   })
+  if (!IS_OFFICIAL) {
+    // OpenRouter expects Authorization: Bearer, while the DeepSeek route sends x-api-key.
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+      if (init?.headers === undefined) return originalFetch(input, init)
+      const headers = new Headers(init.headers)
+      const key = headers.get('x-api-key')
+      if (key !== null) {
+        headers.delete('x-api-key')
+        headers.set('Authorization', `Bearer ${key}`)
+      }
+      return originalFetch(input, { ...init, headers })
+    }
+    cleanups.push(async () => { globalThis.fetch = originalFetch })
+  }
   return ctx
 }
 const tool = { name: 'lookup_value', description: 'Read the requested value. Always call this tool to obtain a value.', parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } }
 
 describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () => {
   it.each(['together', 'separate', 'initially empty'])('calls a tool added to an empty set, updates=%s', async (mode) => {
-    const model = 'deepseek-flash'
+    const model = MODEL
     const ctx = await boot([{ id: model, toolUpdate: 'addition-only' }], process.env.DEEPSEEK_BASE_URL ?? Protocol.PUBLIC_BASE_URL)
     const updates = mode === 'initially empty' ? [] : [createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [
       { type: 'tool-removal', toolName: 'old_lookup' },
@@ -96,7 +113,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     await reply('PROMPT_CLEARED')
   })
 
-  it('uploads, lists, retrieves, reuses, and replaces a deleted Files image across Messages requests', async () => {
+  it.skipIf(!IS_OFFICIAL)('uploads, lists, retrieves, reuses, and replaces a deleted Files image across Messages requests', async () => {
     const ctx = await boot()
     await ctx.plugin(LocalAttachments)
     const fetchImpl = globalThis.fetch
@@ -127,7 +144,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     const attachment = await ctx.attachments.saveImage({ data: await readFile(new URL('fixtures/red.png', import.meta.url)), mediaType: 'image/png' })
     const message = user('What is the dominant color of this image? Reply with one English color word.')
     const request = options({
-      model: 'deepseek-flash', reasoningEffort: brandString<ReasoningEffortId>('off'),
+      model: MODEL, reasoningEffort: brandString<ReasoningEffortId>('off'),
       messages: [{ ...message, content: [...message.content, { type: 'image', attachment }] }],
     })
     for (let run = 0; run < 2; run++) {
@@ -165,7 +182,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     expect(bodies[3]).not.toContain('"type":"base64"')
   })
 
-  it.each([false, true])('submits Loader package inventory and records HTTP acceptance with session-log enabled=%s', async (enabled) => {
+  it.skipIf(!IS_OFFICIAL).each([false, true])('submits Loader package inventory and records HTTP acceptance with session-log enabled=%s', async (enabled) => {
     const pluginRoot = await mkdtemp(join(tmpdir(), 'dsh-unversioned-plugin-e2e-'))
     cleanups.push(() => rm(pluginRoot, { recursive: true, force: true }))
     const unversionedName = 'unversioned-e2e-plugin'
@@ -278,7 +295,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
       user('Do not call tools. Reply with exactly EMPTY_TEXT_RECOVERED_731.'),
     ]
     const saved = JSON.stringify(history)
-    const response = await assemble(ctx.llm.stream(options({ model: 'deepseek-flash', messages: history, tools: [tool], reasoningEffort: brandString<ReasoningEffortId>('off') })))
+    const response = await assemble(ctx.llm.stream(options({ model: MODEL, messages: history, tools: [tool], reasoningEffort: brandString<ReasoningEffortId>('off') })))
     expect(response.assembler.finish.kind).toBe('stop')
     expect(response.message.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('EMPTY_TEXT_RECOVERED_731')
     expect(JSON.stringify(history)).toBe(saved)

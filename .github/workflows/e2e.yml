@@ -1,10 +1,10 @@
 name: E2E (real DeepSeek API)
 
-# Real-API end-to-end suite (`pnpm run test:e2e`). Unlike ci.yml this job
-# consumes the DEEPSEEK_API_KEY_EXTERNAL secret (mapped to the env var
-# DEEPSEEK_API_KEY the tests read) and hits the external API at
-# https://api.deepseek.com/anthropic (DEEPSEEK_BASE_URL is pinned explicitly so a
-# stray repo-root .env can't redirect the run).
+# Real-API end-to-end suite for the DeepSeek Messages adapter, run against
+# OpenRouter's Messages-compatible endpoint with a free model. The repo secret
+# OPENROUTER_API_KEY_EXTERNAL (or the legacy DEEPSEEK_API_KEY_EXTERNAL) is mapped
+# to DEEPSEEK_API_KEY, the env var the tests read. DEEPSEEK_BASE_URL is pinned so
+# a stray repo-root .env cannot redirect the run.
 #
 # pull_request IS a trigger, but GitHub withholds repo secrets from BOTH forked
 # PRs and Dependabot PRs (the latter are same-repo, fork==false, but still
@@ -106,19 +106,19 @@ jobs:
       # absent, so a missing/misconfigured secret would otherwise pass as
       # "all skipped". This job only runs on trusted events (the `if:` above
       # excludes keyless PRs), so the secret MUST be present — fail loudly if not.
-      - name: Preflight (require DEEPSEEK_API_KEY)
+      - name: Preflight (require OpenRouter key)
         env:
-          # Repo secret DEEPSEEK_API_KEY_EXTERNAL holds the external-API key;
-          # the tests read process.env.DEEPSEEK_API_KEY, so map it across here.
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+          # Prefer the OpenRouter secret; fall back to the old secret name whose
+          # value the owner may have replaced with an OpenRouter key.
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY_EXTERNAL }}
         run: |
           set -euo pipefail
           if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
-            echo "::error::DEEPSEEK_API_KEY is empty. The e2e suite would self-skip and"
-            echo "::error::report a false green. Configure the repo secret DEEPSEEK_API_KEY_EXTERNAL."
+            echo "::error::OpenRouter key is empty. The e2e suite would self-skip and"
+            echo "::error::report a false green. Configure OPENROUTER_API_KEY_EXTERNAL."
             exit 1
           fi
-          echo "DEEPSEEK_API_KEY present."
+          echo "OpenRouter key present."
 
       # The e2e suites boot the example bins in `lib` mode (DSH_EXAMPLE_MODE=lib):
       # the built artifact under plain Node, resolving plugins through real package
@@ -132,13 +132,16 @@ jobs:
       # Real-API end-to-end tests only. The keyless gates (lint/typecheck/
       # coverage/snapshot/etc.) already run in ci.yml (pull requests) and
       # ci-master.yml (master push standby).
-      # DEEPSEEK_BASE_URL is pinned to the external API; the secret is scoped to
-      # this step (and preflight) only — never exposed to checkout/setup/install.
-      - name: E2E tests (real DeepSeek API)
+      # OpenRouter Messages (free model) for the DeepSeek adapter E2E only.
+      # The secret is scoped to this step and preflight — never exposed to
+      # checkout/setup/install. Full test:e2e would run CLI suites that hardcode
+      # DeepSeek model ids; this targeted run is the ported gate.
+      - name: E2E tests (OpenRouter Messages, free model)
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
-          DEEPSEEK_BASE_URL: https://api.deepseek.com/anthropic
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+          DEEPSEEK_BASE_URL: https://openrouter.ai/api
+          DEEPSEEK_E2E_MODEL: inclusionai/ling-3.2-flash:free
           DSH_PRIMARY_RUNTIME: ${{ github.workspace }}/.cache/e2e-office/primary-runtime
           DSH_E2E_MAX_WORKERS: 6
           DSH_EXAMPLE_MODE: lib
-        run: pnpm run test:e2e
+        run: pnpm exec vitest run --config vitest.e2e.config.ts packages/llm/llm-deepseek/tests/adapter.e2e.ts

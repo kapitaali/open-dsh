@@ -17,7 +17,7 @@ import { DeepSeekFileStore } from '../src/file-store.ts'
 
 export const prepareExtensions = async () => ({ fields: {}, accept: async () => {} })
 
-export const MODEL = 'deepseek-v4-flash'
+export const MODEL = process.env.DEEPSEEK_E2E_MODEL ?? 'deepseek-v4-flash'
 export const user = (text = 'hello') => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
 export const options = (overrides: Partial<GenerateOptions> = {}): GenerateOptions => ({ provider: 'deepseek-official', model: MODEL, messages: [user()], ...overrides })
 export const start = { type: 'message_start', message: { id: 'msg_1', model: MODEL, usage: { input_tokens: 12, output_tokens: 1 } } }

@@ -1268,6 +1268,12 @@ def smoke_sdk_live() -> None:
 
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     base_url = os.environ.get("DEEPSEEK_BASE_URL")
+    # Endpoint-agnostic live smoke: CI may point this at a Messages-compatible
+    # gateway with a free model and disable thinking if the gateway requires a
+    # different reasoning shape. Defaults keep official DeepSeek behavior.
+    model = os.environ.get("DEEPSEEK_LIVE_MODEL", "deepseek-v4-flash")
+    raw_effort = os.environ.get("DEEPSEEK_LIVE_REASONING_EFFORT", "")
+    reasoning_effort: str | None = raw_effort or None
     if not api_key:
         raise AssertionError("sdk-live requires DEEPSEEK_API_KEY")
     if not base_url:
@@ -1287,7 +1293,7 @@ def smoke_sdk_live() -> None:
         )
         with DeepSeekHarness(
             provider="deepseek-official",
-            model="deepseek-v4-flash",
+            model=model,
             cwd=str(root),
             dsh_home=str(dsh_home),
             env={
@@ -1296,6 +1302,7 @@ def smoke_sdk_live() -> None:
             },
             api_key=api_key,
             base_url=base_url,
+            reasoning_effort=reasoning_effort,
             request_timeout_seconds=180,
         ) as harness:
             created = harness.run(create_prompt, session_id=session_id)

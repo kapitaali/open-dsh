@@ -235,8 +235,12 @@ def verify_wheel(
     version: str,
     platform: tuple[str, str] | None,
 ) -> None:
-    if wheel.stat().st_size > 100_000_000:
-        raise RuntimeError(f"{wheel} is {wheel.stat().st_size} bytes and exceeds the PyPI single-file limit of 100000000 bytes")
+    # PyPI's Warehouse sets MAX_FILESIZE = 100 * ONE_MIB (104,857,600 bytes),
+    # not 100,000,000 decimal bytes. Enforce the actual upload limit so a
+    # valid arm64 wheel is not rejected before publication.
+    max_size = 100 * 1024 * 1024
+    if wheel.stat().st_size > max_size:
+        raise RuntimeError(f"{wheel} is {wheel.stat().st_size} bytes and exceeds the PyPI single-file limit of {max_size} bytes")
     expected_tag = "py3-none-any" if platform is None else f"py3-none-{platform[0]}"
     expected_distribution = SDK_DISTRIBUTION if package == "sdk" else RUNTIME_DISTRIBUTION
     dist_info = f"{expected_distribution.replace('-', '_')}-{version}.dist-info"

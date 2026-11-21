@@ -194,6 +194,6 @@ def test_stage_runtime_rejects_a_noncanonical_executable_name(tmp_path: Path) ->
 def test_wheel_verification_rejects_oversized_artifacts(tmp_path: Path) -> None:
     wheel = tmp_path / "oversized.whl"
     with wheel.open("wb") as output:
-        output.truncate(100_000_001)
+        output.truncate(100 * 1024 * 1024 + 1)
     with pytest.raises(RuntimeError, match="PyPI single-file limit"):
         build_python_release.verify_wheel(wheel, "runtime", "1.2.3", ("win_amd64", "runtime.exe"))

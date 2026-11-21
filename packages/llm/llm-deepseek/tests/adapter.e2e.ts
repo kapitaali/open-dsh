@@ -51,17 +51,45 @@ async function boot(models?: Messages.Options['models'], baseURL = BASE_URL) {
     ...models === undefined ? (IS_OFFICIAL ? {} : { models: [{ id: MODEL }] }) : { models },
   })
   if (!IS_OFFICIAL) {
-    // OpenRouter expects Authorization: Bearer, while the DeepSeek route sends x-api-key.
+    // OpenRouter's Messages-compatible endpoint differs from DeepSeek's:
+    // - Authorization: Bearer instead of x-api-key;
+    // - thinking: enabled requires a budget_tokens value;
+    // - DeepSeek's tool_addition/tool_removal developer-message blocks are
+    //   rejected; the declared tools array already carries the same tools.
+    // Translate in the test's fetch wrapper so the adapter's wire format for
+    // the official endpoint stays unchanged.
     const originalFetch = globalThis.fetch
     globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
-      if (init?.headers === undefined) return originalFetch(input, init)
+      if (init?.body === undefined) return originalFetch(input, init)
+      let body: Record<string, unknown>
+      try { body = JSON.parse(String(init.body)) as Record<string, unknown> }
+      catch (_notJson) { return originalFetch(input, init) }
       const headers = new Headers(init.headers)
       const key = headers.get('x-api-key')
       if (key !== null) {
         headers.delete('x-api-key')
         headers.set('Authorization', `Bearer ${key}`)
       }
-      return originalFetch(input, { ...init, headers })
+      if (typeof body.thinking === 'object' && body.thinking !== null
+        && (body.thinking as Record<string, unknown>).type === 'enabled'
+        && (body.thinking as Record<string, unknown>).budget_tokens === undefined) {
+        (body.thinking as Record<string, unknown>).budget_tokens = 1024
+      }
+      if (Array.isArray(body.messages)) {
+        body.messages = (body.messages as Record<string, unknown>[]).map((message) => {
+          if (!Array.isArray(message.content)) return message
+          const content = (message.content as Record<string, unknown>[]).filter(block =>
+            block.type !== 'tool_addition' && block.type !== 'tool_removal'
+            // Anthropic-compatible endpoints require a signature on historical
+            // thinking blocks; a degraded replay state has none.
+            && !(block.type === 'thinking' && block.signature === undefined))
+          return content.length === 0 ? message : { ...message, content }
+        }).filter((message) => {
+          if (!Array.isArray(message.content)) return true
+          return (message.content as unknown[]).length > 0 || message.role !== 'developer'
+        })
+      }
+      return originalFetch(input, { ...init, headers, body: JSON.stringify(body) })
     }
     cleanups.push(async () => { globalThis.fetch = originalFetch })
   }

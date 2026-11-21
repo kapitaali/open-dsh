@@ -6,6 +6,21 @@ import { providerError } from '../src/transport.ts'
 import { assemble, chunks, end, events, MODEL, sse, start, textEvents } from './helpers.ts'
 
 describe('Messages stream', () => {
+  it('skips null usage buckets as unreported, not malformed', async () => {
+    const values = [
+      { ...start, message: { usage: { input_tokens: 0, output_tokens: 0,
+        cache_read_input_tokens: null, cache_creation_input_tokens: null } } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'OK' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: {}, usage: { output_tokens: 2, cache_read_input_tokens: 0 } },
+      ...end(),
+    ]
+    const { output } = await assemble(translate(events(values), MODEL))
+    expect(output.at(-2)).toMatchObject({ type: 'usage', usage: { cacheReadTokens: 0 } })
+    expect(output.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
   it('streams text already present in the starting block', async () => {
     const result = await chunks(translate(events([start, { ...textEvents[1], content_block: { type: 'text', text: 'initial' } }, textEvents[3]!, ...end()]), MODEL))
     expect(result).toContainEqual({ type: 'text-delta', index: 0, text: 'initial' })

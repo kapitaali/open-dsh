@@ -37,7 +37,10 @@ function updateUsage(usage: TokenUsage, raw: unknown): void {
   const keys = { input_tokens: 'inputTokens', output_tokens: 'outputTokens', cache_read_input_tokens: 'cacheReadTokens', cache_creation_input_tokens: 'cacheWriteTokens' } as const
   for (const [wire, local] of Object.entries(keys)) {
     const value = fields[wire]
-    if (value === undefined) continue
+    // A null token count means the provider did not report that bucket, not a
+    // malformed value. Skip it the same way as an absent key; OpenRouter's
+    // Messages-compatible endpoint sends null cache fields at message_start.
+    if (value === undefined || value === null) continue
     if (!Number.isSafeInteger(value) || (value as number) < 0) return malformed(`invalid ${wire}`)
     usage[local] = value as number
   }

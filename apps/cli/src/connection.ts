@@ -49,6 +49,11 @@ export async function ensureProfileForConnection(profile: string): Promise<boole
   const document = await readConnections(resolveConnectionsPath())
   const connection = findConnection(document, profile)
   if (connection === undefined) return false
+  // Create the profile directory before applyConnectionToProfile writes the
+  // patch; the writer's withFileLock needs the parent to exist for its .lock
+  // sibling. Without this the same-named-connection boot fails on a fresh home.
+  const template = process.env.DSH_PROFILE_TEMPLATE ?? 'web'
+  initProfile(resolveProfileDir(profile), profileTemplate(template))
   await applyConnectionToProfile(profile, connection)
   process.stdout.write(`dsh: created profile "${profile}" from the web template` +
     ` and applied connection "${connection.name}"\n`)
@@ -127,6 +132,11 @@ async function useConnection(args: readonly string[]): Promise<number> {
   // template gives it the application bundles (web, headless, …).
   initProfile(resolveProfileDir(profile), profileTemplate(flags['from-default-profile']))
   await applyConnectionToProfile(profile, connection)
+  if (connection.route === 'pi-ai' && connection.model === undefined
+    && (connection.models === undefined || connection.models.length === 0)) {
+    process.stdout.write(`dsh: connection "${name}" names no model, so the profile still defaults to its previous route.\n`)
+    process.stdout.write('     run pnpm run refresh:connections, or dsh connection use <profile> <name> --model <id>\n')
+  }
   process.stdout.write(`dsh: profile "${profile}" now uses connection "${name}" (${connection.baseURL})\n`)
   return 0
 }

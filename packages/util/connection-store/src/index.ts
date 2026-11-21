@@ -293,7 +293,7 @@ export async function applyConnectionToProfile(
     // of 100, and one connection writes the same reasoningEfforts map into
     // hundreds of models. Serialize with aliasDuplicateObjects: false so each
     // model carries its own inline map and the patch always loads.
-    const text = stringify(document.toJSON(), { aliasDuplicateObjects: false, lineWidth: -1 })
+    const text = stringify(document, { aliasDuplicateObjects: false, lineWidth: -1 })
     await writeFileAtomic(patchPath, text, { mode: 0o600 })
   })
 }

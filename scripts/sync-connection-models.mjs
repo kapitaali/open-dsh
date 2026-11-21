@@ -119,7 +119,7 @@ export async function mergeConnectionModels(profile, connection, home = dshHomeP
   if (!dryRun) {
     document.setIn([...providerPath, 'models'], document.createNode(finalModels))
     await withFileLock(patchPath, async () => {
-      await writeFileAtomic(patchPath, stringify(document.toJSON(), { aliasDuplicateObjects: false, lineWidth: -1 }), { mode: 0o600 })
+      await writeFileAtomic(patchPath, stringify(document, { aliasDuplicateObjects: false, lineWidth: -1 }), { mode: 0o600 })
     })
   }
   return {

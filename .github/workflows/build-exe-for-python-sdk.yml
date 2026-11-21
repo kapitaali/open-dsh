@@ -27,8 +27,17 @@ on:
         required: false
         default: false
     secrets:
+      OPENROUTER_API_KEY_EXTERNAL:
+        description: OpenRouter key for trusted installed-wheel real-API tests.
+        required: false
+      OPENROUTER_API_KEY:
+        description: Alternate OpenRouter key name for the same tests.
+        required: false
       DEEPSEEK_API_KEY_EXTERNAL:
-        description: Real DeepSeek API key for trusted installed-wheel pull-request tests.
+        description: Legacy DeepSeek/OpenRouter key name for trusted installed-wheel tests.
+        required: false
+      DEEPSEEK_API_KEY:
+        description: Alternate legacy key name for the same tests.
         required: false
   workflow_dispatch:
     inputs:
@@ -408,7 +417,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
-            echo "::error::DEEPSEEK_API_KEY_EXTERNAL is empty; the installed-wheel real API test cannot self-skip."
+            echo "::error::OpenRouter key is empty; the installed-wheel real API test cannot self-skip."
             exit 1
           fi
 
@@ -424,7 +433,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) {
-            throw 'DEEPSEEK_API_KEY_EXTERNAL is empty; the installed-wheel real API test cannot self-skip.'
+            throw 'OpenRouter key is empty; the installed-wheel real API test cannot self-skip.'
           }
 
       - name: Run installed-wheel real API black-box test (POSIX)

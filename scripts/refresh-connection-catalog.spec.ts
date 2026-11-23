@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { Connection } from '@deepseek-ai/dsh-connection-store'
+import { mergeConnectionModels } from './sync-connection-models.mjs'
 import {
   discoverForConnection,
   discoverOpenRouterModels,
@@ -11,6 +12,7 @@ import {
   isOpenRouterConnection,
   openRouterHealthCachePath,
   parseArgs,
+  probeOpenRouterModels,
 } from './refresh-connection-catalog.ts'
 
 const openRouter: Connection = {
@@ -38,18 +40,26 @@ function catalogRow(id: string, overrides: Record<string, unknown> = {}): Record
   }
 }
 
+function reasoningRow(id: string, efforts: readonly string[], mandatory = false): Record<string, unknown> {
+  return catalogRow(id, { reasoning: { mandatory, supported_efforts: [...efforts] } })
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
 describe('parseArgs', () => {
   it('defaults to every connection, endpoint source, no write', () => {
-    expect(parseArgs([])).toEqual({ dshHome: undefined, names: [], profiles: [], source: 'endpoint', dryRun: false, replace: false })
+    expect(parseArgs([])).toEqual({
+      dshHome: undefined, names: [], profiles: [], source: 'endpoint', dryRun: false, replace: false, canary: false,
+    })
   })
 
   it('reads the home, names, and the source override', () => {
     expect(parseArgs(['--dsh-home', '/d', '--prefer-catalog', '--dry-run', 'nvidia', 'openrouter']))
-      .toEqual({ dshHome: '/d', names: ['nvidia', 'openrouter'], profiles: [], source: 'catalog', dryRun: true, replace: false })
+      .toEqual({
+        dshHome: '/d', names: ['nvidia', 'openrouter'], profiles: [], source: 'catalog', dryRun: true, replace: false, canary: false,
+      })
   })
 
   it('tolerates the pnpm `--` separator', () => {
@@ -64,7 +74,9 @@ describe('parseArgs', () => {
 
   it('reads repeatable profiles and the connection alias', () => {
     expect(parseArgs(['--profile', 'web', '--profile', 'nvidia', '--connection', 'nous']))
-      .toEqual({ dshHome: undefined, names: ['nous'], profiles: ['web', 'nvidia'], source: 'endpoint', dryRun: false, replace: false })
+      .toEqual({
+        dshHome: undefined, names: ['nous'], profiles: ['web', 'nvidia'], source: 'endpoint', dryRun: false, replace: false, canary: false,
+      })
   })
 
   it('reads the replace flag for exact-catalog merges', () => {
@@ -76,6 +88,13 @@ describe('parseArgs', () => {
   it('reports missing profile and connection values', () => {
     expect(parseArgs(['--profile'])).toBe('--profile needs a name')
     expect(parseArgs(['--connection'])).toBe('--connection needs a name')
+  })
+
+  it('reads the canary flag', () => {
+    expect(parseArgs(['--canary', '--replace', 'openrouter'])).toEqual({
+      dshHome: undefined, names: ['openrouter'], profiles: [], source: 'endpoint',
+      dryRun: false, replace: true, canary: true,
+    })
   })
 })
 
@@ -126,6 +145,25 @@ describe('OpenRouter metadata discovery', () => {
     expect(urls).toHaveLength(2)
     expect(urls[0]).toContain('/models/user?')
     expect(urls[1]).toContain('/models?')
+  })
+
+  it('maps OpenRouter reasoning efforts to DSH levels', async () => {
+    const rows = [
+      reasoningRow('vendor/none', []),
+      reasoningRow('vendor/medium', ['none', 'low', 'medium', 'high', 'max']),
+      reasoningRow('vendor/minimal', ['minimal', 'xhigh']),
+      reasoningRow('vendor/mandatory', ['high'], true),
+      catalogRow('vendor/no-reasoning'),
+    ]
+    const fetchImpl: typeof fetch = async () => jsonResponse({ data: rows, total_count: rows.length })
+    const result = await discoverOpenRouterModels(openRouter, undefined, fetchImpl, NOW)
+    expect(result.reasoning).toEqual({
+      'vendor/none': false,
+      'vendor/medium': { off: null, low: 'low', high: 'high', max: 'max' },
+      'vendor/minimal': { off: null, low: 'low', high: 'high' },
+      'vendor/mandatory': { off: null, high: 'high' },
+      'vendor/no-reasoning': false,
+    })
   })
 
   it('drops batch, dynamic, expired, wrong-endpoint, no-tools and non-text rows', async () => {
@@ -203,6 +241,165 @@ describe('OpenRouter health cache', () => {
       ['vendor/good'], openRouter, undefined, home, true, fetchImpl, NOW,
     )
     expect(result.ids).toEqual(['vendor/good'])
+    expect(() => readFileSync(openRouterHealthCachePath(home))).toThrow()
+  })
+
+  it('writes per-model reasoning profiles through the sync merge', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-or-sync-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
+    mkdirSync(join(home, 'profiles', 'web'), { recursive: true })
+    mkdirSync(join(home, 'model-health'), { recursive: true })
+    writeFileSync(join(home, 'profiles', 'web', 'cordis.patch.yml'), [
+      '- id: llm-pi-ai',
+      "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+      '  config:',
+      '    providers:',
+      '      openrouter:',
+      '        baseURL: https://openrouter.ai/api/v1',
+      '        apiKeyEnv: OPENROUTER_API_KEY',
+      '',
+    ].join('\n'), 'utf8')
+    writeFileSync(openRouterHealthCachePath(home), JSON.stringify({
+      version: 2,
+      models: {
+        'vendor/plain': { checkedAt: NOW, eligible: true, reasoning: false },
+        'vendor/reasons': { checkedAt: NOW, eligible: true, reasoning: { off: null, high: 'high' } },
+      },
+    }), 'utf8')
+    const result = await mergeConnectionModels(
+      'web',
+      { ...openRouter, models: ['vendor/plain', 'vendor/reasons'], reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' } },
+      home,
+      false,
+      true,
+    )
+    expect(result.status).toBe('updated')
+    const patch = readFileSync(join(home, 'profiles', 'web', 'cordis.patch.yml'), 'utf8')
+    expect(patch).toContain('reasoningEfforts: false')
+    expect(patch).toContain('high: high')
+    expect(patch).not.toContain('low: low')
+  })
+
+  it('migrates version 1 cache entries to non-reasoning profiles', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-or-health-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
+    mkdirSync(join(home, 'model-health'), { recursive: true })
+    writeFileSync(openRouterHealthCachePath(home), JSON.stringify({
+      version: 1,
+      models: { 'vendor/old': { checkedAt: NOW, eligible: true } },
+    }), 'utf8')
+    const result = await filterHealthyOpenRouterModels(
+      ['vendor/old'], openRouter, undefined, home, false, globalThis.fetch, NOW,
+      { 'vendor/old': false },
+    )
+    expect(result.ids).toEqual(['vendor/old'])
+    interface CachedReasoning { version: number; models: Record<string, { reasoning: unknown }> }
+    const cache = JSON.parse(readFileSync(openRouterHealthCachePath(home), 'utf8')) as CachedReasoning
+    expect(cache.version).toBe(2)
+    expect(cache.models['vendor/old']?.reasoning).toBe(false)
+  })
+})
+
+describe('OpenRouter canary', () => {
+  it('sends reasoning.effort for a mandatory-reasoning model', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-or-canary-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
+    mkdirSync(join(home, 'model-health'), { recursive: true })
+    writeFileSync(openRouterHealthCachePath(home), JSON.stringify({
+      version: 2,
+      models: { 'vendor/mandatory': { checkedAt: NOW, eligible: true, reasoning: { high: 'high' } } },
+    }), 'utf8')
+    let body: Record<string, unknown> = {}
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse({ id: 'chatcmpl-1', choices: [] })
+    }
+    await probeOpenRouterModels(['vendor/mandatory'], openRouter, 'sk-test', home, false, fetchImpl, NOW)
+    expect(body.reasoning).toEqual({ effort: 'high' })
+  })
+
+  it('removes a model on a deterministic 400/404 failure', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-or-canary-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
+    const fetchImpl: typeof fetch = async () => jsonResponse({ error: { message: 'model not found' } }, 404)
+    const result = await probeOpenRouterModels(
+      ['vendor/bad'], openRouter, 'sk-test', home, false, fetchImpl, NOW,
+    )
+    expect(result.ids).toEqual([])
+    expect(result.report).toEqual({ ok: 0, failed: 1, unknown: 0, aborted: false })
+    const cache = JSON.parse(readFileSync(openRouterHealthCachePath(home), 'utf8')) as {
+      models: Record<string, { runtime?: { status: string; reason?: string } }>
+    }
+    expect(cache.models['vendor/bad']?.runtime?.status).toBe('failed')
+    expect(cache.models['vendor/bad']?.runtime?.reason).toBe('model not found')
+  })
+
+  it('keeps models on 429 and 5xx as unknown', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-or-canary-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls++
+      return jsonResponse({ error: { message: 'slow down' } }, calls === 1 ? 429 : 503)
+    }
+    const result = await probeOpenRouterModels(
+      ['vendor/a', 'vendor/b'], openRouter, 'sk-test', home, false, fetchImpl, NOW,
+    )
+    expect(result.ids).toEqual(['vendor/a', 'vendor/b'])
+    expect(result.report.unknown).toBe(2)
+    expect(result.report.failed).toBe(0)
+  })
+
+  it('aborts remaining probes on account-level billing failure', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-or-canary-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
+    const ids = Array.from({ length: 8 }, (_, index) => `vendor/model-${index}`)
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls++
+      return jsonResponse({ error: { message: 'no credit' } }, 402)
+    }
+    const result = await probeOpenRouterModels(ids, openRouter, 'sk-test', home, false, fetchImpl, NOW)
+    expect(result.report.aborted).toBe(true)
+    expect(result.report.failed).toBe(0)
+    expect(result.ids).toHaveLength(8)
+    // Four workers may already be in flight; the remaining four must not start.
+    expect(calls).toBeLessThanOrEqual(4)
+    expect(calls).toBeLessThan(ids.length)
+  })
+
+  it('sends tools, Bearer auth and the model id on a successful probe', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-or-canary-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
+    let url = ''
+    let headers = new Headers()
+    let body: Record<string, unknown> = {}
+    const fetchImpl: typeof fetch = async (input, init) => {
+      url = String(input)
+      headers = new Headers(init?.headers)
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse({ id: 'chatcmpl-1', choices: [] })
+    }
+    const result = await probeOpenRouterModels(
+      ['vendor/good'], openRouter, 'sk-test', home, false, fetchImpl, NOW,
+    )
+    expect(result.ids).toEqual(['vendor/good'])
+    expect(result.report.ok).toBe(1)
+    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions')
+    expect(headers.get('authorization')).toBe('Bearer sk-test')
+    expect(body.model).toBe('vendor/good')
+    expect(body.tools).toBeDefined()
+    expect(body.tool_choice).toBe('auto')
+  })
+
+  it('does not write the cache on a dry run', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-or-canary-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
+    const fetchImpl: typeof fetch = async () => jsonResponse({ error: { message: 'bad' } }, 404)
+    const result = await probeOpenRouterModels(
+      ['vendor/bad'], openRouter, 'sk-test', home, true, fetchImpl, NOW,
+    )
+    expect(result.ids).toEqual([])
     expect(() => readFileSync(openRouterHealthCachePath(home))).toThrow()
   })
 })

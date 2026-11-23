@@ -47,7 +47,18 @@ interface Options {
   readonly dryRun: boolean
   /** Make the refreshed catalog authoritative; default merge is additive. */
   readonly replace: boolean
+  /** Send opt-in runtime probes; each probe is a real model call. */
+  readonly canary: boolean
 }
+
+/** DSH reasoning effort levels carried by one model profile. */
+type ReasoningLevel = 'off' | 'low' | 'high' | 'max'
+
+/** One model's reasoning profile; false means the model is non-reasoning. */
+type ReasoningEfforts = false | Partial<Record<ReasoningLevel, string | null>>
+
+/** Per-model reasoning profiles keyed by model id. */
+type OpenRouterReasoningMap = Record<string, ReasoningEfforts>
 
 /** Counts from the OpenRouter catalog eligibility filter. */
 export interface OpenRouterMetadataReport {
@@ -65,16 +76,30 @@ export interface OpenRouterHealthReport {
   readonly requests: number
 }
 
+/** Counts from the opt-in runtime canary. */
+export interface OpenRouterCanaryReport {
+  readonly ok: number
+  readonly failed: number
+  readonly unknown: number
+  readonly aborted: boolean
+}
+
 /** One cached health decision. */
 interface HealthEntry {
   readonly checkedAt: number
   readonly eligible: boolean
   readonly reason?: string
+  readonly reasoning: ReasoningEfforts
+  readonly runtime?: {
+    readonly status: 'ok' | 'failed' | 'unknown'
+    readonly checkedAt: number
+    readonly reason?: string
+  }
 }
 
 /** Versioned health cache, stored outside the repo under the DSH home. */
 interface HealthCache {
-  readonly version: 1
+  readonly version: 1 | 2
   readonly models: Record<string, HealthEntry>
 }
 
@@ -84,6 +109,8 @@ const OPENROUTER_MAX_PAGES = 5
 const HEALTH_TTL_MS = 6 * 60 * 60 * 1000
 const HEALTH_UPTIME_MIN = 95
 const HEALTH_CONCURRENCY = 8
+const CANARY_CONCURRENCY = 4
+const CANARY_TIMEOUT_MS = 20_000
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -157,6 +184,26 @@ async function getCatalogPage(
   return await getJson(`${base}/models?${params.toString()}`, apiKey, fetchImpl)
 }
 
+/** Map one OpenRouter reasoning row to DSH effort levels, or false. */
+function mapReasoning(row: unknown): ReasoningEfforts {
+  if (!isRecord(row)) return false
+  const reasoning = row.reasoning
+  if (!isRecord(reasoning)) return false
+  const offered = stringList(reasoning.supported_efforts) ?? []
+  const has = (...values: readonly string[]): boolean => values.some(value => offered.includes(value))
+  const map: Partial<Record<ReasoningLevel, string | null>> = {}
+  // Always declare off as null. pi-ai sends reasoning.effort:"none" for a
+  // reasoning model whose map has no off level; OpenRouter rejects that on
+  // mandatory-reasoning endpoints. off:null makes pi-ai omit the field.
+  map.off = null
+  if (has('minimal', 'low')) map.low = 'low'
+  if (has('medium', 'high', 'xhigh')) map.high = 'high'
+  if (has('max')) map.max = 'max'
+  return Object.keys(map).length === 0 || Object.keys(map).every(level => level === 'off')
+    ? false
+    : map
+}
+
 /** Local rejection reason for one OpenRouter catalog row. */
 function rejectReason(row: unknown, id: string, endpoint: string, now: number): string | undefined {
   if (!isRecord(row)) return 'invalid-row'
@@ -195,9 +242,10 @@ export async function discoverOpenRouterModels(
   apiKey: string | undefined,
   fetchImpl: typeof fetch = globalThis.fetch,
   now: number = Date.now(),
-): Promise<{ ids: readonly string[]; report: OpenRouterMetadataReport }> {
+): Promise<{ ids: readonly string[]; reasoning: OpenRouterReasoningMap; report: OpenRouterMetadataReport }> {
   const endpoint = wireEndpoint(connection)
   const rows: unknown[] = []
+  const reasoning: OpenRouterReasoningMap = {}
   let total: number | undefined
   for (let page = 0; page < OPENROUTER_MAX_PAGES; page++) {
     const params = new URLSearchParams({
@@ -227,8 +275,9 @@ export async function discoverOpenRouterModels(
       continue
     }
     ids.push(id)
+    reasoning[id] = mapReasoning(row)
   }
-  return { ids, report: { total: total ?? rows.length, kept: ids.length, dropped } }
+  return { ids, reasoning, report: { total: total ?? rows.length, kept: ids.length, dropped } }
 }
 
 /** Cache path for one DSH home. */
@@ -237,20 +286,33 @@ export function openRouterHealthCachePath(home: string): string {
 }
 
 async function readHealthCache(home: string): Promise<HealthCache> {
-  const empty: HealthCache = { version: 1, models: {} }
+  const empty: HealthCache = { version: 2, models: {} }
   try {
     const parsed: unknown = JSON.parse(await readFile(openRouterHealthCachePath(home), 'utf8'))
-    if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.models)) return empty
+    if (!isRecord(parsed) || (parsed.version !== 1 && parsed.version !== 2) || !isRecord(parsed.models)) return empty
     const models: Record<string, HealthEntry> = {}
     for (const [id, value] of Object.entries(parsed.models)) {
       if (!isRecord(value) || typeof value.eligible !== 'boolean') continue
       const checkedAt = numeric(value.checkedAt)
       if (checkedAt === undefined) continue
-      models[id] = typeof value.reason === 'string'
-        ? { checkedAt, eligible: value.eligible, reason: value.reason }
-        : { checkedAt, eligible: value.eligible }
+      const entry: HealthEntry = {
+        checkedAt,
+        eligible: value.eligible,
+        reasoning: value.reasoning === false ? false : isRecord(value.reasoning) ? value.reasoning as ReasoningEfforts : false,
+      }
+      const withReason = typeof value.reason === 'string' ? { ...entry, reason: value.reason } : entry
+      const runtime = isRecord(value.runtime)
+        && ['ok', 'failed', 'unknown'].includes(String(value.runtime.status))
+        && numeric(value.runtime.checkedAt) !== undefined
+        ? {
+          status: value.runtime.status as 'ok' | 'failed' | 'unknown',
+          checkedAt: numeric(value.runtime.checkedAt) as number,
+          ...typeof value.runtime.reason === 'string' ? { reason: value.runtime.reason } : {},
+        }
+        : undefined
+      models[id] = runtime === undefined ? withReason : { ...withReason, runtime }
     }
-    return { version: 1, models }
+    return { version: 2, models }
   } catch {
     return empty
   }
@@ -308,6 +370,7 @@ export async function filterHealthyOpenRouterModels(
   dryRun: boolean,
   fetchImpl: typeof fetch = globalThis.fetch,
   now: number = Date.now(),
+  reasoningMap: OpenRouterReasoningMap = {},
 ): Promise<{ ids: readonly string[]; report: OpenRouterHealthReport }> {
   const cache = await readHealthCache(home)
   const decisions: Record<string, HealthEntry> = { ...cache.models }
@@ -324,25 +387,142 @@ export async function filterHealthyOpenRouterModels(
   })
   await mapWithConcurrency(stale, HEALTH_CONCURRENCY, async (id) => {
     requests++
+    const reasoning = reasoningMap[id] ?? false
     try {
       const body = await getJson(modelEndpointsUrl(connection, id), apiKey, fetchImpl)
       const payload = isRecord(body.data) ? body.data : body
       const endpoints = Array.isArray(payload.endpoints) ? payload.endpoints : []
       const eligible = endpoints.some(endpointHealthy)
       decisions[id] = eligible
-        ? { checkedAt: now, eligible: true }
-        : { checkedAt: now, eligible: false, reason: 'no-healthy-endpoint' }
+        ? { checkedAt: now, eligible: true, reasoning }
+        : { checkedAt: now, eligible: false, reason: 'no-healthy-endpoint', reasoning }
     } catch {
       unknown++
       // A transient endpoint-listing failure must not delete a usable model.
+      decisions[id] = { checkedAt: now, eligible: true, reason: 'endpoint-unknown', reasoning }
     }
   })
+  for (const id of ids) {
+    if (stale.includes(id)) continue
+    const entry = decisions[id]
+    if (entry !== undefined && reasoningMap[id] !== undefined) decisions[id] = { ...entry, reasoning: reasoningMap[id] ?? false }
+  }
   const eligibleIds = ids.filter(id => decisions[id]?.eligible !== false)
   const dropped = ids.length - eligibleIds.length
-  if (!dryRun && requests > 0) await writeHealthCache(home, { version: 1, models: decisions })
+  if (!dryRun && (requests > 0 || ids.some(id => reasoningMap[id] !== undefined))) {
+    await writeHealthCache(home, { version: 2, models: decisions })
+  }
   return {
     ids: eligibleIds,
     report: { kept: eligibleIds.length, dropped, unknown, cacheHits, requests },
+  }
+}
+
+function canaryReason(body: unknown, fallback: string): string {
+  const error = isRecord(body) ? body.error : undefined
+  const message = isRecord(error) && typeof error.message === 'string' ? error.message : fallback
+  return message.slice(0, 200)
+}
+
+/**
+ * Probe models with a tiny real request through the connection's wire protocol.
+ * Account-level auth/billing failures abort the run without marking models bad.
+ */
+export async function probeOpenRouterModels(
+  ids: readonly string[],
+  connection: Connection,
+  apiKey: string | undefined,
+  home: string,
+  dryRun: boolean,
+  fetchImpl: typeof fetch = globalThis.fetch,
+  now: number = Date.now(),
+): Promise<{ ids: readonly string[]; report: OpenRouterCanaryReport }> {
+  if (apiKey === undefined) return { ids, report: { ok: 0, failed: 0, unknown: 0, aborted: true } }
+  const cache = await readHealthCache(home)
+  const decisions: Record<string, HealthEntry> = { ...cache.models }
+  let ok = 0
+  let failed = 0
+  let unknown = 0
+  let aborted = false
+  const base = connection.baseURL.replace(/\/+$/u, '')
+  const url = `${base}/chat/completions`
+  const requestBody = JSON.stringify({
+    model: '',
+    stream: false,
+    max_tokens: 16,
+    messages: [{ role: 'user', content: 'Reply with exactly OK.' }],
+    tools: [{
+      type: 'function',
+      function: { name: 'probe', description: 'No-op canary probe.', parameters: { type: 'object', properties: {} } },
+    }],
+    tool_choice: 'auto',
+  })
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(CANARY_CONCURRENCY, ids.length) }, async () => {
+    for (;;) {
+      if (aborted) return
+      const index = cursor++
+      if (index >= ids.length) return
+      const id = ids[index]
+      if (id === undefined) continue
+      const entry = decisions[id] ?? { checkedAt: now, eligible: true, reasoning: false as ReasoningEfforts }
+      let status: 'ok' | 'failed' | 'unknown' = 'unknown'
+      let reason: string | undefined
+      try {
+        const payload = JSON.parse(requestBody) as Record<string, unknown>
+        payload.model = id
+        // Mandatory-reasoning models reject an omitted/disabled thinking field.
+        // OpenRouter's OpenAI-compatible wire uses reasoning.effort.
+        if (entry.reasoning !== false) {
+          const effort = entry.reasoning.high ?? entry.reasoning.max ?? entry.reasoning.low
+          if (effort !== undefined && effort !== null) payload.reasoning = { effort }
+        }
+        const response = await fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            accept: 'application/json',
+            authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(CANARY_TIMEOUT_MS),
+        })
+        if ([401, 402, 403].includes(response.status)) {
+          aborted = true
+          return
+        }
+        if ([400, 404].includes(response.status)) {
+          status = 'failed'
+          let body: unknown = undefined
+          try { body = await response.json() } catch { /* fall back to status reason */ }
+          reason = canaryReason(body, `HTTP ${response.status}`)
+        } else if (response.ok) {
+          let body: unknown = undefined
+          try { body = await response.json() } catch { /* unknown body */ }
+          if (isRecord(body) && (Array.isArray(body.choices) || typeof body.id === 'string')) status = 'ok'
+          else reason = 'unexpected-success-body'
+        } else {
+          reason = `HTTP ${response.status}`
+        }
+      } catch (error) {
+        reason = error instanceof Error ? error.message.slice(0, 200) : 'probe-error'
+      }
+      if (status === 'ok') ok++
+      else if (status === 'failed') failed++
+      else unknown++
+      decisions[id] = {
+        ...entry,
+        runtime: reason === undefined
+          ? { status, checkedAt: now }
+          : { status, checkedAt: now, reason },
+      }
+    }
+  })
+  await Promise.all(workers)
+  if (!dryRun && (ok + failed + unknown > 0)) await writeHealthCache(home, { version: 2, models: decisions })
+  return {
+    ids: ids.filter(id => decisions[id]?.runtime?.status !== 'failed'),
+    report: { ok, failed, unknown, aborted },
   }
 }
 
@@ -356,6 +536,7 @@ export function parseArgs(argv: readonly string[]): Options | string {
   let source: Source = 'endpoint'
   let dryRun = false
   let replace = false
+  let canary = false
   const names: string[] = []
   const profiles: string[] = []
   for (let index = 0; index < argv.length; index++) {
@@ -388,10 +569,14 @@ export function parseArgs(argv: readonly string[]): Options | string {
       replace = true
       continue
     }
+    if (arg === '--canary') {
+      canary = true
+      continue
+    }
     if (arg.startsWith('--')) return `unknown argument ${JSON.stringify(arg)}`
     names.push(arg)
   }
-  return { dshHome, names, profiles, source, dryRun, replace }
+  return { dshHome, names, profiles, source, dryRun, replace, canary }
 }
 
 /**
@@ -433,16 +618,22 @@ function reportMerge(result: MergeReport): void {
     + `${result.added === undefined ? '' : ` added=${result.added} removed=${result.removed}`}\n`)
 }
 
-function reportOpenRouter(metadata: OpenRouterMetadataReport, health: OpenRouterHealthReport): string {
+function reportOpenRouter(
+  metadata: OpenRouterMetadataReport,
+  health: OpenRouterHealthReport,
+  canary?: OpenRouterCanaryReport,
+): string {
   const reasons = Object.entries(metadata.dropped)
     .filter(([, count]) => count > 0)
     .map(([reason, count]) => `${reason}=${count}`)
     .join(',')
-  return ` openrouter total=${metadata.total} metadata_kept=${metadata.kept}`
+  const base = ` openrouter total=${metadata.total} metadata_kept=${metadata.kept}`
     + `${reasons === '' ? '' : ` dropped[${reasons}]`}`
     + ` health_kept=${health.kept} health_dropped=${health.dropped}`
     + ` health_unknown=${health.unknown} health_cache_hits=${health.cacheHits}`
     + ` health_requests=${health.requests}`
+  return canary === undefined ? base : `${base} canary_ok=${canary.ok} canary_failed=${canary.failed}`
+    + ` canary_unknown=${canary.unknown} canary_aborted=${canary.aborted}`
 }
 
 /**
@@ -490,9 +681,17 @@ export async function main(argv: readonly string[]): Promise<number> {
     try {
       if (openRouter) {
         const discovered = await discoverOpenRouterModels(connection, apiKey)
-        const healthy = await filterHealthyOpenRouterModels(discovered.ids, connection, apiKey, home, options.dryRun)
+        const healthy = await filterHealthyOpenRouterModels(
+          discovered.ids, connection, apiKey, home, options.dryRun, globalThis.fetch, Date.now(), discovered.reasoning,
+        )
         ids = healthy.ids
-        filterNote = reportOpenRouter(discovered.report, healthy.report)
+        if (options.canary) {
+          const probed = await probeOpenRouterModels(ids, connection, apiKey, home, options.dryRun)
+          ids = probed.ids
+          filterNote = reportOpenRouter(discovered.report, healthy.report, probed.report)
+        } else {
+          filterNote = reportOpenRouter(discovered.report, healthy.report)
+        }
       } else {
         ids = await discoverForConnection(connection, options.source, apiKey as string)
       }
@@ -507,7 +706,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     refreshed++
     refreshedNames.push(connection.name)
     const added = connection.reasoningEfforts === undefined ? ' (added default reasoning efforts)' : ''
-    process.stdout.write(`  ${connection.name}: ${ids.length} models from ${options.source === 'catalog' ? 'catalog' : connection.baseURL}${added}${filterNote}\n`)
+    const source = options.source === 'catalog' ? 'catalog' : connection.baseURL
+    process.stdout.write(`  ${connection.name}: ${ids.length} models from ${source}${added}${filterNote}\n`)
   }
 
   // Merge into explicitly named profiles. Default model is never touched here.

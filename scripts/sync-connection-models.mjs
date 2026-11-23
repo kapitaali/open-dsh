@@ -47,16 +47,44 @@ function findRowIndex(document, id) {
   return contents.items.findIndex(item => isMap(item) && item.get('id') === id)
 }
 
+/** Whether a connection points at OpenRouter's API host. */
+function isOpenRouter(connection) {
+  try {
+    return ['openrouter.ai', 'www.openrouter.ai'].includes(new URL(connection.baseURL).hostname.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+/** Read per-model reasoning profiles from the OpenRouter health sidecar. */
+async function readOpenRouterReasoning(home) {
+  try {
+    const parsed = JSON.parse(await readFile(join(home, 'model-health', 'openrouter.json'), 'utf8'))
+    if (!parsed || (parsed.version !== 1 && parsed.version !== 2) || !parsed.models || typeof parsed.models !== 'object') return {}
+    const out = {}
+    for (const [id, entry] of Object.entries(parsed.models)) {
+      if (!entry || typeof entry !== 'object') continue
+      out[id] = entry.reasoning === false ? false : entry.reasoning && typeof entry.reasoning === 'object' ? entry.reasoning : false
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
 /** Build model entries in the same shape as applyPiAiConnection. */
-function modelList(connection) {
+function modelList(connection, reasoning = {}) {
   const ids = connection.models?.length > 0
     ? connection.models
     : connection.model === undefined ? [] : [connection.model]
+  const perModel = isOpenRouter(connection) ? reasoning : {}
   return ids.map(id => ({
     id,
     name: id,
     ...(connection.contextWindow === undefined ? {} : { contextWindow: connection.contextWindow }),
-    ...(connection.reasoningEfforts === undefined ? {} : { reasoningEfforts: connection.reasoningEfforts }),
+    ...(Object.prototype.hasOwnProperty.call(perModel, id)
+      ? { reasoningEfforts: perModel[id] }
+      : connection.reasoningEfforts === undefined ? {} : { reasoningEfforts: connection.reasoningEfforts }),
   }))
 }
 
@@ -97,7 +125,8 @@ export async function mergeConnectionModels(profile, connection, home = dshHomeP
     return { profile, connection: connection.name, status: 'skip', reason: 'provider not configured in profile' }
   }
 
-  const desired = modelList(connection)
+  const reasoning = isOpenRouter(connection) ? await readOpenRouterReasoning(home) : {}
+  const desired = modelList(connection, reasoning)
   const modelsNode = document.getIn([...providerPath, 'models'], true)
   const existingModels = isSeq(modelsNode)
     ? modelsNode.items.map(item => isMap(item) ? item.toJS(document) : null).filter(Boolean)
@@ -157,7 +186,8 @@ async function main(argv) {
     }
   }
   if (profiles.length === 0 || connections.length === 0) {
-    process.stderr.write('usage: --profile <name> [--profile <name>…] --connection <name> [--connection <name>…] [--dry-run] [--replace]\n')
+    process.stderr.write('usage: --profile <name> [--profile <name>…]'
+      + ' --connection <name> [--connection <name>…] [--dry-run] [--replace]\n')
     return 1
   }
   const home = dshHomePath()

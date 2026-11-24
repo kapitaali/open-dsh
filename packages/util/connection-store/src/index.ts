@@ -22,7 +22,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { Document, isMap, isSeq, parseDocument, stringify, type YAMLError } from 'yaml'
+import { Document, isMap, isNode, isSeq, parseDocument, stringify, visit, type YAMLError } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isCredentialRefName } from '@deepseek-ai/dsh-credentials'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -255,6 +255,25 @@ const LLM_DEEPSEEK_ROW = { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deeps
 const LLM_PI_AI_ROW = { id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai' } as const
 const AGENT_DEFAULT_MODEL_ROW = { id: 'agent-default-model', name: '@deepseek-ai/dsh-agent-default-model' } as const
 
+/** Replace every YAML alias with a detached copy of its resolved source. */
+function inlineYamlAliases(document: Document): void {
+  visit(document, {
+    Alias(_key, node) {
+      const source = node.resolve(document)
+      if (source === undefined) throw new Error(`Unresolved YAML alias *${node.source}`)
+      const copy = source.clone()
+      if (!isNode(copy)) throw new Error(`Unsupported YAML alias source *${node.source}`)
+      delete copy.anchor
+      return copy
+    },
+  })
+  visit(document, {
+    Node(_key, node) {
+      delete node.anchor
+    },
+  })
+}
+
 /**
  * Write one connection into a profile's patch layer. A `deepseek` connection
  * replaces the `llm-deepseek` row's config; a `pi-ai` connection merges one
@@ -289,10 +308,10 @@ export async function applyConnectionToProfile(
   else applyDeepSeekConnection(document, connection)
 
   await withFileLock(patchPath, async () => {
-    // Strip aliases: the runtime loader's YAML parser has a default maxAliasCount
-    // of 100, and one connection writes the same reasoningEfforts map into
-    // hundreds of models. Serialize with aliasDuplicateObjects: false so each
-    // model carries its own inline map and the patch always loads.
+    // The runtime loader rejects more than 100 aliases. Inline aliases that
+    // already exist in the patch as well as preventing new duplicate-object
+    // aliases, so every connection write leaves a loadable profile.
+    inlineYamlAliases(document)
     const text = stringify(document, { aliasDuplicateObjects: false, lineWidth: -1 })
     await writeFileAtomic(patchPath, text, { mode: 0o600 })
   })

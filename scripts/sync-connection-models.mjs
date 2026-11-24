@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url'
 // node_modules contains the DSH workspace links and yaml in this checkout.
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const requireFromCli = createRequire(join(repoRoot, 'apps/cli/package.json'))
-const { isMap, isSeq, parseDocument, stringify } = requireFromCli('yaml')
+const { isMap, isNode, isSeq, parseDocument, stringify, visit } = requireFromCli('yaml')
 const { readConnections, resolveConnectionsPath } = requireFromCli('@deepseek-ai/dsh-connection-store')
 const { withFileLock, writeFileAtomic } = requireFromCli('@deepseek-ai/dsh-atomic-write')
 
@@ -101,7 +101,6 @@ async function readPatch(patchPath) {
   const text = await readFile(patchPath, 'utf8')
   const document = parseDocument(text, {
     customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => value }],
-    maxAliasCount: 100000,
   })
   if (document.errors[0] !== undefined) throw document.errors[0]
   return document
@@ -143,6 +142,25 @@ export async function listProfilesUsingConnection(connection, home = dshHomePath
     if (usesConnection(await readPatch(patchPath), connection)) profiles.push(entry.name)
   }
   return profiles.sort()
+}
+
+/** Replace every YAML alias with a detached copy of its resolved source. */
+function inlineYamlAliases(document) {
+  visit(document, {
+    Alias(_key, node) {
+      const source = node.resolve(document)
+      if (source === undefined) throw new Error(`Unresolved YAML alias *${node.source}`)
+      const copy = source.clone()
+      if (!isNode(copy)) throw new Error(`Unsupported YAML alias source *${node.source}`)
+      delete copy.anchor
+      return copy
+    },
+  })
+  visit(document, {
+    Node(_key, node) {
+      delete node.anchor
+    },
+  })
 }
 
 /**
@@ -192,6 +210,7 @@ export async function mergeConnectionModels(profile, connection, home = dshHomeP
   if (!dryRun) {
     document.setIn([...providerPath, 'models'], document.createNode(finalModels))
     await withFileLock(patchPath, async () => {
+      inlineYamlAliases(document)
       await writeFileAtomic(patchPath, stringify(document, { aliasDuplicateObjects: false, lineWidth: -1 }), { mode: 0o600 })
     })
   }

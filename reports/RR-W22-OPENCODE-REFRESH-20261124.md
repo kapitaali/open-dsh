@@ -102,3 +102,7 @@ The following checks ran and remained red. Their reported paths were outside the
 ## Status
 
 The code change, regression test, documentation update, and live OpenCode profile refresh are complete. The working tree contains the seven implementation and README files listed above, this report, and the appended `reports/LOG.md` row. No commit or push was made.
+
+## Follow-up on 2026-11-24
+
+The refresh change was committed on `fix/refresh-connection-profiles`. A later `pnpm dsh web` boot exposed a separate writer defect: the refresh preserved pre-existing YAML aliases in the web patch. Both writers now inline existing aliases, the live patches were repaired, and the web profile boots. The evidence is in `RR-W22-ALIAS-INLINE-20261124.md` and `packages/util/connection-store/BUG_REPORT.md`.

@@ -2,6 +2,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parseEntryYaml } from '@deepseek-ai/cordis-plugin-include'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
   readConnections,
@@ -139,6 +140,63 @@ describe('discoverForConnection', () => {
 })
 
 describe('refresh profile propagation', () => {
+  it('inlines aliases already present in a profile patch', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-refresh-aliases-'))
+    onTestFinished(() => {
+      rmSync(home, { recursive: true, force: true })
+    })
+    const profileDir = join(home, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    const patchPath = join(profileDir, 'cordis.patch.yml')
+    writeFileSync(patchPath, [
+      '# keep this header',
+      '- id: llm-pi-ai',
+      "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+      '  config:',
+      '    expression: !!js "[\'keep\']"',
+      '    providers:',
+      '      opencode:',
+      '        baseURL: https://opencode.example/v1',
+      '        apiKeyEnv: OPENCODE_API_KEY',
+      '        api: openai-completions',
+      '        models:',
+      '          - id: old-model',
+      '      legacy:',
+      '        baseURL: https://legacy.example/v1',
+      '        apiKeyEnv: LEGACY_API_KEY',
+      '        models:',
+      '          - id: old-0',
+      '            reasoningEfforts: &a1',
+      '              off: null',
+      '              low: low',
+      ...Array.from({ length: 120 }, (_, index) => [
+        `          - id: old-${String(index + 1)}`,
+        '            reasoningEfforts: *a1',
+      ]).flat(),
+      '',
+    ].join('\n'), 'utf8')
+
+    const result = await mergeConnectionModels('web', {
+      name: 'opencode',
+      baseURL: 'https://opencode.example/v1',
+      apiKeyEnv: 'OPENCODE_API_KEY',
+      api: 'openai-completions',
+      models: ['new-model'],
+    }, home, false, true)
+
+    expect(result.status).toBe('updated')
+    const text = readFileSync(patchPath, 'utf8')
+    expect(text).toContain('# keep this header')
+    expect(text).toContain('!!js')
+    expect(text).not.toMatch(/\*a[0-9]+/u)
+    expect(text).not.toMatch(/&a[0-9]+/u)
+    const rows = parseEntryYaml(text) as Array<{
+      config: { expression: unknown; providers: Record<string, { models: Array<{ id: string }> }> }
+    }>
+    expect(rows[0]?.config.expression).toEqual({ __jsExpr: "['keep']" })
+    expect(rows[0]?.config.providers.opencode?.models[0]?.id).toBe('new-model')
+  })
+
   it('updates every profile already using the refreshed connection without --profile', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-refresh-profiles-'))
     onTestFinished(() => {

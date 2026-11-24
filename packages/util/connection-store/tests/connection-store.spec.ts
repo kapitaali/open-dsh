@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, expectTypeOf, it } from 'vitest'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parseDocument } from 'yaml'
 import {
+  applyConnectionToProfile,
   findConnection,
   isConnectionName,
   parseConnectionsDocument,
@@ -200,6 +202,59 @@ describe('readConnections / writeConnections', () => {
     const path = resolveConnectionsPath()
     await writeFile(path, 'version: 1\nconnections: [unclosed\n', { mode: 0o600 })
     await expect(readConnections(path)).rejects.toThrow(/invalid document/)
+  })
+})
+
+describe('applyConnectionToProfile', () => {
+  it('inlines existing aliases while preserving comments and js expressions', async () => {
+    const home = await tempHome()
+    const profileDir = join(home, 'profiles', 'web')
+    await mkdir(profileDir, { recursive: true })
+    const patchPath = join(profileDir, 'cordis.patch.yml')
+    await writeFile(patchPath, [
+      '# keep this header',
+      '- id: llm-pi-ai',
+      "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+      '  config:',
+      '    expression: !!js "[\'keep\']"',
+      '    providers:',
+      '      legacy:',
+      '        baseURL: https://legacy.example/v1',
+      '        apiKeyEnv: LEGACY_API_KEY',
+      '        models:',
+      '          - id: old-0',
+      '            reasoningEfforts: &a1',
+      '              off: null',
+      '              low: low',
+      ...Array.from({ length: 120 }, (_, index) => [
+        `          - id: old-${String(index + 1)}`,
+        '            reasoningEfforts: *a1',
+      ]).flat(),
+      '',
+    ].join('\n'), { mode: 0o600 })
+
+    await applyConnectionToProfile('web', {
+      name: 'acme',
+      baseURL: 'https://gateway.acme.example/v1',
+      apiKeyEnv: 'ACME_API_KEY',
+      route: 'pi-ai',
+      model: 'new-model',
+    }, home)
+
+    const text = await readFile(patchPath, 'utf8')
+    expect(text).toContain('# keep this header')
+    expect(text).toContain('!!js')
+    expect(text).not.toMatch(/\*a[0-9]+/u)
+    expect(text).not.toMatch(/&a[0-9]+/u)
+    const document = parseDocument(text, {
+      customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }],
+    })
+    expect(document.errors).toEqual([])
+    const rows = document.toJS() as Array<{
+      config: { expression: string; providers: Record<string, { models: Array<{ id: string }> }> }
+    }>
+    expect(rows[0]?.config.expression).toBe("['keep']")
+    expect(rows[0]?.config.providers.acme?.models[0]?.id).toBe('new-model')
   })
 })
 

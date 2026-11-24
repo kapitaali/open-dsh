@@ -143,7 +143,7 @@ A connection's model list can be pulled from its own endpoint:
 pnpm run refresh:connections
 ```
 
-For each `pi-ai` connection this asks the endpoint (`GET {baseURL}/models`) with the stored credential and stores the advertised ids on the connection, ready for `dsh connection use` to write into the profile. Pass `--prefer-catalog` to answer known providers from the installed registry instead (no network call, and it carries capacities a listing omits), name one or more connections to limit the run, or `--dry-run` to preview. Connections on the `deepseek` route have no endpoint listing and are skipped.
+For each `pi-ai` connection this asks the endpoint (`GET {baseURL}/models`) with the stored credential and stores the advertised ids on the connection. It also merges those ids into every profile that already configures the same connection, so an open model picker sees the refreshed list after the profile reloads. Pass `--profile <name>` to limit the merge to named profiles, `--replace` to remove ids the endpoint no longer advertises, `--prefer-catalog` to answer known providers from the installed registry instead (no network call, and it carries capacities a listing omits), one or more connection names to limit the run, or `--dry-run` to preview. Connections on the `deepseek` route have no endpoint listing and are skipped.
 
 ### Switching the reasoning effort
 

@@ -1,7 +1,7 @@
 /**
  * Type declarations for the JavaScript merge module used by
  * scripts/refresh-connection-catalog.ts. A .mjs file has no inferred types
- * under this repo's strict tsconfig, so the two exported functions are
+ * under this repo's strict tsconfig, so its exported functions are
  * declared here. No runtime behaviour changes.
  */
 
@@ -17,6 +17,9 @@ export interface MergeResult {
 
 export interface MergeConnectionLike {
   name: string
+  baseURL: string
+  apiKeyEnv: string
+  api?: string
   models?: readonly string[]
   model?: string
   contextWindow?: number
@@ -24,6 +27,11 @@ export interface MergeConnectionLike {
 }
 
 export function dshHomePath(): string
+
+export function listProfilesUsingConnection(
+  connection: MergeConnectionLike,
+  home?: string,
+): Promise<string[]>
 
 export function mergeConnectionModels(
   profile: string,

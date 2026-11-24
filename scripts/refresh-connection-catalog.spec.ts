@@ -3,13 +3,20 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import type { Connection } from '@deepseek-ai/dsh-connection-store'
+import {
+  readConnections,
+  resolveConnectionsPath,
+  storeConnectionKey,
+  writeConnections,
+  type Connection,
+} from '@deepseek-ai/dsh-connection-store'
 import { mergeConnectionModels } from './sync-connection-models.mjs'
 import {
   discoverForConnection,
   discoverOpenRouterModels,
   filterHealthyOpenRouterModels,
   isOpenRouterConnection,
+  main,
   openRouterHealthCachePath,
   parseArgs,
   probeOpenRouterModels,
@@ -42,6 +49,27 @@ function catalogRow(id: string, overrides: Record<string, unknown> = {}): Record
 
 function reasoningRow(id: string, efforts: readonly string[], mandatory = false): Record<string, unknown> {
   return catalogRow(id, { reasoning: { mandatory, supported_efforts: [...efforts] } })
+}
+
+function providerPatch(provider: string, baseURL: string, models: readonly string[]): string {
+  return [
+    '- id: llm-pi-ai',
+    "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+    '  config:',
+    '    providers:',
+    `      ${provider}:`,
+    `        baseURL: ${baseURL}`,
+    `        apiKeyEnv: ${provider.toUpperCase()}_API_KEY`,
+    '        api: openai-completions',
+    '        models:',
+    ...models.map(id => `          - id: ${id}`),
+    '- id: agent-default-model',
+    "  name: '@deepseek-ai/dsh-agent-default-model'",
+    '  config:',
+    `    provider: ${provider}`,
+    `    model: ${models[0] ?? 'missing'}`,
+    '',
+  ].join('\n')
 }
 
 afterEach(() => {
@@ -107,6 +135,58 @@ describe('discoverForConnection', () => {
     )
     expect(ids.length).toBeGreaterThan(0)
     expect(ids.every(id => typeof id === 'string' && id.length > 0)).toBe(true)
+  })
+})
+
+describe('refresh profile propagation', () => {
+  it('updates every profile already using the refreshed connection without --profile', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-refresh-profiles-'))
+    onTestFinished(() => {
+      rmSync(home, { recursive: true, force: true })
+    })
+    const connection: Connection = {
+      name: 'opencode',
+      baseURL: 'https://opencode.example/v1',
+      apiKeyEnv: 'OPENCODE_API_KEY',
+      route: 'pi-ai',
+      model: 'old-model',
+      models: ['old-model'],
+    }
+    await writeConnections(resolveConnectionsPath(home), { version: 1, connections: [connection] })
+    await storeConnectionKey(connection.apiKeyEnv, 'sk-test', home)
+    for (const profile of ['opencode', 'web']) {
+      const dir = join(home, 'profiles', profile)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'cordis.patch.yml'), providerPatch('opencode', connection.baseURL, ['old-model']), 'utf8')
+    }
+    const unrelatedDir = join(home, 'profiles', 'unrelated')
+    mkdirSync(unrelatedDir, { recursive: true })
+    writeFileSync(join(unrelatedDir, 'cordis.patch.yml'), providerPatch('other', 'https://other.example/v1', ['other-model']), 'utf8')
+    const differentEndpointDir = join(home, 'profiles', 'different-endpoint')
+    mkdirSync(differentEndpointDir, { recursive: true })
+    writeFileSync(
+      join(differentEndpointDir, 'cordis.patch.yml'),
+      providerPatch('opencode', 'https://other-opencode.example/v1', ['old-model']),
+      'utf8',
+    )
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ data: [{ id: 'new-model' }, { id: 'second-model' }] })))
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    onTestFinished(() => {
+      stdout.mockRestore()
+    })
+
+    expect(await main(['--dsh-home', home, 'opencode'])).toBe(0)
+
+    const updated = await readConnections(resolveConnectionsPath(home))
+    expect(updated.connections[0]?.models).toEqual(['new-model', 'second-model'])
+    for (const profile of ['opencode', 'web']) {
+      const patch = readFileSync(join(home, 'profiles', profile, 'cordis.patch.yml'), 'utf8')
+      expect(patch).toContain('id: new-model')
+      expect(patch).toContain('id: second-model')
+      expect(patch).toContain('model: old-model')
+    }
+    expect(readFileSync(join(unrelatedDir, 'cordis.patch.yml'), 'utf8')).not.toContain('new-model')
+    expect(readFileSync(join(differentEndpointDir, 'cordis.patch.yml'), 'utf8')).not.toContain('new-model')
   })
 })
 

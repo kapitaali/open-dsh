@@ -149,7 +149,7 @@ Importing 6 credentials (skipping 11 non-credential)
 pnpm run refresh:connections
 ```
 
-对于每个 `pi-ai` 连接，这会使用已存储的凭据询问端点（`GET {baseURL}/models`），并把广播的 id 保存在连接上，供 `dsh connection use` 写入 profile。传入 `--prefer-catalog` 改为从已安装的注册表回答已知提供方（无网络调用，且带有列表不提供的容量），指定一个或多个连接名以限制运行范围，或 `--dry-run` 预览。`deepseek` 路由上的连接没有端点列表，会被跳过。
+对于每个 `pi-ai` 连接，这会使用已存储的凭据询问端点（`GET {baseURL}/models`），并把广播的 id 保存在连接上。它还会把这些 id 合并到已经配置了同一连接的每个 profile，以便 profile 重新加载后，打开的模型选择器能看到刷新后的列表。传入 `--profile <name>` 可把合并限制到指定的 profile，传入 `--replace` 可删除端点不再广播的 id，传入 `--prefer-catalog` 改为从已安装的注册表回答已知提供方（无网络调用，且带有列表不提供的容量），指定一个或多个连接名以限制运行范围，或 `--dry-run` 预览。`deepseek` 路由上的连接没有端点列表，会被跳过。
 
 ### 切换推理力度
 

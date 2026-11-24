@@ -12,7 +12,7 @@
  *     --profile web --connection nous [--dry-run]
  */
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -96,6 +96,55 @@ function existingIds(document, path) {
     .filter(Boolean)
 }
 
+/** Read a profile patch, refusing malformed YAML. */
+async function readPatch(patchPath) {
+  const text = await readFile(patchPath, 'utf8')
+  const document = parseDocument(text, {
+    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => value }],
+    maxAliasCount: 100000,
+  })
+  if (document.errors[0] !== undefined) throw document.errors[0]
+  return document
+}
+
+/** Whether one profile configures the same pi-ai route as the connection. */
+function usesConnection(document, connection) {
+  const row = findRowIndex(document, PI_AI_ROW)
+  if (row < 0 || document.getIn([row, 'name']) !== PI_AI_PACKAGE) return false
+  const providerPath = [row, 'config', 'providers', connection.name]
+  const provider = document.getIn(providerPath, true)
+  if (!isMap(provider)) return false
+  const baseURL = provider.get('baseURL')
+  const apiKeyEnv = provider.get('apiKeyEnv')
+  const api = provider.get('api') ?? 'openai-completions'
+  return baseURL === connection.baseURL
+    && apiKeyEnv === connection.apiKeyEnv
+    && api === (connection.api ?? 'openai-completions')
+}
+
+/**
+ * List profiles whose pi-ai provider route matches one saved connection.
+ * Missing profile roots and patches are skipped; malformed patches are refused.
+ */
+export async function listProfilesUsingConnection(connection, home = dshHomePath()) {
+  const root = join(home, 'profiles')
+  let entries
+  try {
+    entries = await readdir(root, { withFileTypes: true })
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return []
+    throw error
+  }
+  const profiles = []
+  for (const entry of entries) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+    const patchPath = profilePatchPath(entry.name, home)
+    if (!existsSync(patchPath)) continue
+    if (usesConnection(await readPatch(patchPath), connection)) profiles.push(entry.name)
+  }
+  return profiles.sort()
+}
+
 /**
  * Merge one connection's models into one profile's provider route.
  * Returns a status record; dry-run makes no write. Never changes defaults.
@@ -105,12 +154,7 @@ export async function mergeConnectionModels(profile, connection, home = dshHomeP
   if (!existsSync(patchPath)) {
     return { profile, connection: connection.name, status: 'skip', reason: 'no profile patch' }
   }
-  const text = await readFile(patchPath, 'utf8')
-  const document = parseDocument(text, {
-    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => value }],
-    maxAliasCount: 100000,
-  })
-  if (document.errors[0] !== undefined) throw document.errors[0]
+  const document = await readPatch(patchPath)
   const row = findRowIndex(document, PI_AI_ROW)
   if (row < 0) {
     return { profile, connection: connection.name, status: 'skip', reason: 'no llm-pi-ai row' }

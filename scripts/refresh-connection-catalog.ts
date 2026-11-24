@@ -12,11 +12,11 @@
  * models without the DSH wire endpoint or tools are dropped, and a cached
  * per-model `/endpoints` health check removes models with no healthy provider.
  *
- * With `--profile <name>` (repeatable), this script also merges each refreshed
- * connection's models into that profile's pi-ai provider route, preserving the
- * profile's current default model. The merge is additive by default; pass
- * `--replace` to make the refreshed catalog authoritative and drop stale ids.
- * Without `--profile`, behavior is unchanged: only connections.yaml is written.
+ * By default the refreshed ids are also merged into every profile that already
+ * configures the same connection. `--profile <name>` limits the merge to the
+ * named profiles. The profile's current default model is preserved. The merge
+ * is additive by default; pass `--replace` to make the refreshed catalog
+ * authoritative and drop stale ids.
  *
  * Catalog routes (nvidia, openrouter, deepseek, …) are answered from the
  * installed pi-ai registry when `--prefer-catalog` is passed; by default the
@@ -33,7 +33,7 @@ import { dirname, join } from 'node:path'
 import { readConnections, resolveConnectionsPath, writeConnections, type Connection } from '@deepseek-ai/dsh-connection-store'
 import { readConnectionKey } from '@deepseek-ai/dsh-connection-store'
 import { discoverModels } from '@deepseek-ai/dsh-llm-pi-ai'
-import { dshHomePath, mergeConnectionModels } from './sync-connection-models.mjs'
+import { dshHomePath, listProfilesUsingConnection, mergeConnectionModels } from './sync-connection-models.mjs'
 
 /** Which listing a refresh asks for. */
 type Source = 'endpoint' | 'catalog'
@@ -710,12 +710,16 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`  ${connection.name}: ${ids.length} models from ${source}${added}${filterNote}\n`)
   }
 
-  // Merge into explicitly named profiles. Default model is never touched here.
+  // Merge into explicitly named profiles, or every profile already configured
+  // with the refreshed connection. Default model is never touched here.
   const mergeAll = async (dryRun: boolean): Promise<void> => {
     for (const name of refreshedNames) {
       const connection = next.get(name)
       if (connection === undefined) continue
-      for (const profile of options.profiles) {
+      const profiles = options.profiles.length > 0
+        ? options.profiles
+        : await listProfilesUsingConnection(connection, home)
+      for (const profile of profiles) {
         reportMerge(await mergeConnectionModels(profile, connection, home, dryRun, options.replace))
       }
     }

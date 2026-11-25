@@ -24,9 +24,9 @@ dsh plugin install /home/theb/Documents/ctxvm/packages/deepseek
 # target=/home/theb/Documents/ctxvm/packages/deepseek
 ```
 
-`@ctxvm/node` is an exact external dependency (`0.1.1`) containing the passive
-`stub()` API. No repository-relative `file:` dependency or workspace symlink is
-used. Publish/install that package before installing this adapter.
+`@ctxvm/node` is a repository-local `file:` dependency at
+`../../../../Documents/ctxvm/packages/node`. Build it in the ctxvm checkout
+before installing this adapter. No npm publish is required.
 
 ## Config
 

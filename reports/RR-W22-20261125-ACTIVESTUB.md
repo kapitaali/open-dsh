@@ -75,3 +75,7 @@ Forced-pressure real Nous `meituan/longcat-2.5:free`
 
 No cost-saving, paging-quality, model-quality, determinism, availability, or
 `stubText` redaction claim. Active mode is opt-in and default-off.
+
+## Packaging correction (2026-11-25)
+
+The owner ruled that `@ctxvm/node@0.1.1` stays in the ctxvm repository and is not published to npm. The adapter now uses a repository-relative `file:` dependency. The earlier publish/install sequence in this report is superseded; see `RR-W22-LOCAL-NODE-20261125.md`.

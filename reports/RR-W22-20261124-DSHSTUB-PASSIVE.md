@@ -66,3 +66,7 @@ The generated traces and logs are under workspace
 
 Passive wire parity only. No active selection, surface mutation, cost-saving,
 paging-quality, model-quality, determinism, or `stubText` redaction claim.
+
+## Packaging correction (2026-11-25)
+
+The owner ruled that `@ctxvm/node@0.1.1` stays in the ctxvm repository and is not published to npm. The adapter now uses a repository-relative `file:` dependency. The earlier publish/install sequence in this report is superseded; see `RR-W22-LOCAL-NODE-20261125.md`.

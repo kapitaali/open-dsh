@@ -182,6 +182,8 @@ Tasks:
 
 ### Phase 3 — Context management (active)
 
+The implementation plan is `design/W22-DSH-STUB-MODE-20261124.md`. Passive stub-wire parity lands first. The active engine starts only after passive traces validate, replay, and pass the adapter-aware coverage checker.
+
 - A `CompactionEngine` backend (or a new context-engine seam) that uses the page table for
   eviction (ctxvm keep law).
 - Stub text per RFC-0 §7 (identify · how-to-recover · cost).

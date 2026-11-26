@@ -1,17 +1,17 @@
 ---
 description: "在令牌轮换时使 DSH 的 OAuth 凭据与 Hermes 安装保持同步。"
-kind: "package-reference"
+kind: "package-bundle"
 ---
 
 # @deepseek-ai/dsh-hermes-token-sync
 
 [English](README.md) | 中文
 
-## Summary
+## 概述
 
 监视 Hermes 安装的 `auth.json`，在每个配置提供方的 OAuth 访问令牌轮换时将其推送到 DSH 凭据存储。`credentials-local` 在外部编辑时重新加载文档，`llm-pi-ai` 在每次请求时解析凭据引用，因此刷新后的令牌无需重启宿主即可用于下一次模型调用。
 
-## Table of Contents
+## 目录
 
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
@@ -70,6 +70,10 @@ kind: "package-reference"
 #### KV Cache effect
 
 无。此插件不修改请求前缀。
+
+## 开发备注
+
+监视器使用 auth 文件所在目录，以便原子重命名替换仍可被观察。测试覆盖从过期状态到当前状态的同步、幂等写入、格式错误的 auth 数据，以及监视器释放；测试不记录令牌值。
 
 ## 已知限制与延期工作
 

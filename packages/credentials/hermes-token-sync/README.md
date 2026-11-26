@@ -1,6 +1,6 @@
 ---
 description: "Keep DSH OAuth credentials in sync with a Hermes install as tokens rotate."
-kind: "package-reference"
+kind: "package-bundle"
 ---
 
 # @deepseek-ai/dsh-hermes-token-sync
@@ -70,6 +70,10 @@ Zero direct token effect. This plugin never adds text to a request.
 #### KV Cache effect
 
 None. This plugin does not alter request prefixes.
+
+## Dev Note
+
+The watcher uses the auth-file parent directory so atomic rename replacements remain observable. Tests cover stale-to-current sync, idempotent writes, malformed auth data, and watcher disposal without logging token values.
 
 ## Known Limitations and Deferred Work
 

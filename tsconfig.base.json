@@ -452,6 +452,8 @@
       "@deepseek-ai/dsh-ptc-runtime-node/configuration": ["./packages/ptc-runtime/ptc-runtime-node/src/configuration.ts"],
       "@deepseek-ai/dsh-message-feedback/types": ["./packages/feedback/message-feedback/src/types.ts"],
       "@deepseek-ai/dsh-webhook/types": ["./packages/experimental/webhook/src/types.ts"],
+      // Package name does not match its directory, so the generator skips it.
+      "@deepseek-ai/dsh-hermes-token-sync": ["./packages/credentials/hermes-token-sync/src"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

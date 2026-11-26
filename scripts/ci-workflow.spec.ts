@@ -935,7 +935,7 @@ describe('CI workflow', () => {
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
       with: { targets: 'node24-linux-x64,node24-win-x64', ci: true },
       secrets: {
-        DEEPSEEK_API_KEY_EXTERNAL: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
+        OPENROUTER_API_KEY: '${{ secrets.OPENROUTER_API_KEY }}',
       },
     })
     expect(aggregate.needs).toEqual(['python-sdk', 'python-runtime'])
@@ -1207,8 +1207,14 @@ describe('DeepSeek e2e workflow', () => {
     const e2e = workflowJob(workflow, 'e2e')
     if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
 
-    const step = e2e.steps.filter(isRecord).find(candidate => candidate.name === 'E2E tests (real DeepSeek API)')
-    expect(step).toMatchObject({ env: { DSH_E2E_MAX_WORKERS: 6 } })
+    const step = e2e.steps.filter(isRecord).find(candidate => candidate.name === 'E2E tests (OpenRouter Messages, free model)')
+    expect(step).toMatchObject({
+      env: {
+        DSH_E2E_MAX_WORKERS: 6,
+        DEEPSEEK_BASE_URL: 'https://openrouter.ai/api',
+        DEEPSEEK_E2E_MODEL: 'nvidia/nemotron-3.5-lightning:free',
+      },
+    })
   })
 })
 
@@ -1328,7 +1334,7 @@ describe('Python release workflows', () => {
       release: { type: 'boolean', default: false },
     })
     expect(call.secrets).toMatchObject({
-      DEEPSEEK_API_KEY_EXTERNAL: { required: false },
+      OPENROUTER_API_KEY: { required: false },
     })
     expect(workflow.concurrency).toMatchObject({
       group: 'build-single-exe-${{ github.workflow }}-${{ github.ref }}',
@@ -1372,7 +1378,7 @@ describe('Python release workflows', () => {
     expect(cleanVenvWindows).toMatchObject({ if: "runner.os == 'Windows'", shell: 'pwsh' })
     expect(JSON.stringify(cleanVenvWindows)).toContain('Scripts\\\\python.exe')
     expect(realApiPreflightPosix).toMatchObject({
-      env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
+      env: { DEEPSEEK_API_KEY: '${{ secrets.OPENROUTER_API_KEY }}' },
     })
     expect(String(realApiPreflightPosix.if)).toContain('inputs.ci')
     expect(String(realApiPreflightPosix.if)).toContain('head.repo.fork')
@@ -1381,8 +1387,9 @@ describe('Python release workflows', () => {
     for (const step of [installedRealApiPosix, installedRealApiWindows]) {
       expect(step).toMatchObject({
         env: {
-          DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
-          DEEPSEEK_BASE_URL: 'https://api.deepseek.com/anthropic',
+          DEEPSEEK_API_KEY: '${{ secrets.OPENROUTER_API_KEY }}',
+          DEEPSEEK_BASE_URL: 'https://openrouter.ai/api',
+          DEEPSEEK_LIVE_MODEL: 'nvidia/nemotron-3.5-lightning:free',
         },
       })
     }

@@ -30,7 +30,7 @@ mode remains the default and never registers the active listener.
 ## Verification
 
 ```
-adapter unit suite: 35 passed, 1 named replay skip
+adapter unit suite: 39 passed, 1 named replay skip
 tsc -p packages/deepseek/tsconfig.json: rc=0
 ci-deepseek.sh: rc=0 (external tracer tarball; no source symlink)
 ```
@@ -47,6 +47,12 @@ Forced-pressure real Nous `meituan/longcat-2.5:free`
 - 15-event trace, 3 tool results, 2 eviction/stub pairs, `stubCount: 2`;
 - schema/checker passed; Rust replay `divergences: []` with one expected
   identifier-scan `faultOfResidentPage`.
+
+## Hardening follow-up
+
+Added call-time second-demand pinning, downstream decision preservation tests,
+fixed-scaffold budget coverage, and duplicate-call idempotency. Adapter suite is
+now 39 passed; the local forced-pressure harness was re-run green.
 
 ## Parity limits / deliberate deviations
 

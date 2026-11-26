@@ -1,11 +1,13 @@
 /** Active stub-mode pure engine tests. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { toolRef } from '@ctxvm/node'
 import {
   buildStubText,
   createActiveSessionState,
   estimateEngineMessage,
   hardKeepIndices,
+  noteActiveRefault,
   pageKey,
   planActiveStub,
   type ActiveEngineConfig,
@@ -140,4 +142,23 @@ test('stub template, read-only excerpt, escaping, cap, and mutating fallback are
   assert.equal(escaped, '[ctxvm: dropped result for search_files(\\[a\\]  b); re-run to restore.]')
   const capped = buildStubText({ name: 'read_file', args: 'x'.repeat(201) })
   assert.ok(capped.includes(`${'x'.repeat(200)}...[truncated]`))
+})
+
+test('a durable model-initiated re-read pins on second demand exactly once', () => {
+  const state = createActiveSessionState()
+  const ref = toolRef(undefined, 'read_file', { path: 'a.ts' })
+  const first = candidate(1, 0, ref, 'sha256:one', 10)
+  planActiveStub([message('tool', 'one')], [first], config, state)
+  assert.equal(noteActiveRefault(state, { seq: 2, name: 'read_file', args: { path: 'a.ts' } }), 1)
+  assert.equal(state.pages.get(pageKey(first))?.pinned, true)
+  assert.equal(noteActiveRefault(state, { seq: 2, name: 'read_file', args: { path: 'a.ts' } }), 0)
+  assert.equal(state.pages.get(pageKey(first))?.demandCount, 2)
+})
+
+test('fixed scaffold over budget still drops every droppable page (Hermes pin-crunch behavior)', () => {
+  const state = createActiveSessionState()
+  const messages = [message('assistant', 'x'.repeat(400)), message('tool', 'full')]
+  const plan = planActiveStub(messages, [candidate(1, 1, 'tool:one', 'sha256:1', 10)], { ...config, budgetTokens: 50 }, state)
+  assert.equal(plan.selected.length, 1)
+  assert.ok(plan.residentTokens > 50)
 })

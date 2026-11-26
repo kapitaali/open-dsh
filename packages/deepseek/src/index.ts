@@ -19,8 +19,8 @@ import { makeConfig, type CtxvmDshConfig } from './config.ts'
 import { mapEvent } from './event-map.ts'
 import { createSessionTracer, ensureTracer, finalizeTracer, flushTracer } from './tracer.ts'
 import { ctxvmPageTableProjection, makePageTableStateSchema, setPageTableStateSchema } from './page-table.ts'
-import { applyActivePreStep, type ActiveAgent } from './active-runtime.ts'
-import { createActiveSessionState, type ActiveSessionState } from './context-engine.ts'
+import { runActivePreStepDecision, type ActiveAgent } from './active-runtime.ts'
+import { createActiveSessionState, noteActiveRefault, type ActiveSessionState } from './context-engine.ts'
 import type { SessionTracer } from './types.ts'
 
 export const name = 'ctxvm-tracer'
@@ -64,18 +64,26 @@ export function apply(ctx: Context, config: CtxvmDshConfig): void {
       if (eventCount <= 5 || eventCount % 100 === 0) log('session/event #' + eventCount, key.slice(0, 8), (event as { type?: string }).type)
       ensureTracer(st, event, config) // no-op once created
       mapEvent(st, event)
+      if (config.mode === 'stub' && event.type === 'tool/call') {
+        const state = activeSessions.get(key) ?? createActiveSessionState()
+        activeSessions.set(key, state)
+        const raw = typeof event.data.arguments === 'string' ? event.data.arguments : ''
+        let args: unknown = raw
+        try { args = JSON.parse(raw) } catch { /* keep raw text */ }
+        noteActiveRefault(state, { seq: Number(event.seq), name: event.data.name, args })
+      }
     })
 
     const offPreStep = config.mode === 'stub'
       ? ctx.on('agent/pre-step', async ({ agent, signal, messages }, next) => {
-        const decision = await next()
-        if (decision.kind === 'reject' || signal.aborted) return decision
         const key = String(agent.session.id)
         const st = sessions.get(key)
-        if (st === undefined) return decision
+        if (st === undefined) return next()
         const state = activeSessions.get(key) ?? createActiveSessionState()
         activeSessions.set(key, state)
-        const result = await applyActivePreStep(ctx, config, st, state, agent as unknown as ActiveAgent, signal, messages)
+        const { decision, result } = await runActivePreStepDecision(
+          ctx, config, st, state, agent as unknown as ActiveAgent, signal, messages, next,
+        )
         if (result.appended > 0) log('active stub plan', key.slice(0, 8), result.plan.reason, 'appended', result.appended)
         return decision
       }, { prepend: true })

@@ -27,17 +27,8 @@ on:
         required: false
         default: false
     secrets:
-      OPENROUTER_API_KEY_EXTERNAL:
-        description: OpenRouter key for trusted installed-wheel real-API tests.
-        required: false
       OPENROUTER_API_KEY:
-        description: Alternate OpenRouter key name for the same tests.
-        required: false
-      DEEPSEEK_API_KEY_EXTERNAL:
-        description: Legacy DeepSeek/OpenRouter key name for trusted installed-wheel tests.
-        required: false
-      DEEPSEEK_API_KEY:
-        description: Alternate legacy key name for the same tests.
+        description: OpenRouter key for trusted installed-wheel real-API tests.
         required: false
   workflow_dispatch:
     inputs:
@@ -413,7 +404,7 @@ jobs:
               || !(github.event.pull_request.head.repo.fork
                    || github.event.pull_request.user.login == 'dependabot[bot]'))
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
@@ -430,7 +421,7 @@ jobs:
                    || github.event.pull_request.user.login == 'dependabot[bot]'))
         shell: pwsh
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) {
             throw 'OpenRouter key is empty; the installed-wheel real API test cannot self-skip.'
@@ -444,7 +435,7 @@ jobs:
               || !(github.event.pull_request.head.repo.fork
                    || github.event.pull_request.user.login == 'dependabot[bot]'))
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           DEEPSEEK_BASE_URL: https://openrouter.ai/api
           DEEPSEEK_LIVE_MODEL: nvidia/nemotron-3.5-lightning:free
           DEEPSEEK_LIVE_REASONING_EFFORT: 'off'
@@ -467,7 +458,7 @@ jobs:
                    || github.event.pull_request.user.login == 'dependabot[bot]'))
         shell: pwsh
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           DEEPSEEK_BASE_URL: https://openrouter.ai/api
           DEEPSEEK_LIVE_MODEL: nvidia/nemotron-3.5-lightning:free
           DEEPSEEK_LIVE_REASONING_EFFORT: 'off'

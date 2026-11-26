@@ -1,7 +1,7 @@
 /** Active pre-step runtime tests with a nondeprecated surface-query stub. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyActivePreStep } from '../src/active-runtime.ts'
+import { applyActivePreStep, runActivePreStepDecision } from '../src/active-runtime.ts'
 import { createActiveSessionState, type EngineMessage } from '../src/context-engine.ts'
 import { createSessionTracer } from '../src/tracer.ts'
 import type { CtxvmDshConfig } from '../src/config.ts'
@@ -115,4 +115,29 @@ test('unknown original provenance is diagnostic-only', async () => {
   assert.equal(result.appended, 0)
   assert.equal(f.appends.length, 0)
   assert.ok(state.diagnostics.some(item => item.includes('no original PageId')))
+})
+
+test('downstream reject prevents active query and mutation', async () => {
+  const f = fixture()
+  const state = createActiveSessionState()
+  const decision = { kind: 'reject' as const }
+  const result = await runActivePreStepDecision(
+    f.ctx as never, config, f.tracer, state, { id: f.tracer.sessionId, session: f.session } as never,
+    new AbortController().signal, [], async () => decision,
+  )
+  assert.equal(result.decision, decision)
+  assert.equal(result.result.appended, 0)
+  assert.equal(f.queries(), 0)
+})
+
+test('downstream startsRequestSeries survives active replacement', async () => {
+  const f = fixture()
+  const state = createActiveSessionState()
+  const decision = { kind: 'enter' as const, messages: [], startsRequestSeries: true as const }
+  const result = await runActivePreStepDecision(
+    f.ctx as never, config, f.tracer, state, { id: f.tracer.sessionId, session: f.session } as never,
+    new AbortController().signal, [], async () => decision,
+  )
+  assert.equal(result.decision, decision)
+  assert.equal(result.result.appended, 1)
 })

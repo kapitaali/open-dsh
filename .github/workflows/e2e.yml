@@ -2,8 +2,8 @@ name: E2E (real DeepSeek API)
 
 # Real-API end-to-end suite for the DeepSeek Messages adapter, run against
 # OpenRouter's Messages-compatible endpoint with a free model. The repo secret
-# OPENROUTER_API_KEY_EXTERNAL (or the legacy DEEPSEEK_API_KEY_EXTERNAL) is mapped
-# to DEEPSEEK_API_KEY, the env var the tests read. DEEPSEEK_BASE_URL is pinned so
+# OPENROUTER_API_KEY is mapped to DEEPSEEK_API_KEY, the env var the tests read.
+# DEEPSEEK_BASE_URL is pinned so
 # a stray repo-root .env cannot redirect the run.
 #
 # pull_request IS a trigger, but GitHub withholds repo secrets from BOTH forked
@@ -110,12 +110,12 @@ jobs:
         env:
           # Prefer the OpenRouter secret; fall back to the old secret name whose
           # value the owner may have replaced with an OpenRouter key.
-          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
             echo "::error::OpenRouter key is empty. The e2e suite would self-skip and"
-            echo "::error::report a false green. Configure OPENROUTER_API_KEY_EXTERNAL."
+            echo "::error::report a false green. Configure OPENROUTER_API_KEY."
             exit 1
           fi
           echo "OpenRouter key present."
@@ -138,7 +138,7 @@ jobs:
       # DeepSeek model ids; this targeted run is the ported gate.
       - name: E2E tests (OpenRouter Messages, free model)
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY_EXTERNAL || secrets.OPENROUTER_API_KEY || secrets.DEEPSEEK_API_KEY_EXTERNAL || secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           DEEPSEEK_BASE_URL: https://openrouter.ai/api
           DEEPSEEK_E2E_MODEL: nvidia/nemotron-3.5-lightning:free
           DSH_PRIMARY_RUNTIME: ${{ github.workspace }}/.cache/e2e-office/primary-runtime

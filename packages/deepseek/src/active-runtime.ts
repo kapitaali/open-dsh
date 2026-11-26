@@ -71,6 +71,31 @@ function emptyResult(): ActiveRuntimeResult {
   }
 }
 
+export type EnginePreStepDecision =
+  | { kind: 'reject' }
+  | { kind: 'enter'; messages: readonly EngineMessage[]; startsRequestSeries?: true }
+
+/** Delegate downstream first, then apply active selection without changing the decision. */
+export async function runActivePreStepDecision<T extends EnginePreStepDecision>(
+  ctx: Context,
+  config: CtxvmDshConfig,
+  tracer: SessionTracer,
+  state: ActiveSessionState,
+  agent: ActiveAgent,
+  signal: AbortSignal,
+  messages: readonly EngineMessage[],
+  next: () => Promise<T>,
+): Promise<{ decision: T; result: ActiveRuntimeResult }> {
+  const decision = await next()
+  if (decision.kind === 'reject' || signal.aborted) return { decision, result: emptyResult() }
+  const result = await applyActivePreStep(ctx, config, tracer, state, agent, signal, messages)
+  if (result.appended > 0) {
+    state.diagnostics.push(`active plan ${result.plan.reason}: appended ${result.appended}`)
+    if (state.diagnostics.length > 100) state.diagnostics.shift()
+  }
+  return { decision, result }
+}
+
 /** Build current append-origin tool-result candidates from the nondeprecated surface query. */
 export async function buildActiveCandidates(
   ctx: Context,

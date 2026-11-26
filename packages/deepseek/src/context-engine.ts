@@ -1,4 +1,5 @@
 /** Active ctxvm stub-mode selection, protection, pinning, and stub-text helpers. */
+import { toolRef } from '@ctxvm/node'
 export interface ActiveEngineConfig {
   budgetTokens: number
   protectFirstN: number
@@ -53,6 +54,7 @@ export interface ActiveSessionState {
   identityActive: Map<string, string>
   pinOrder: string[]
   stubbedKeys: Set<string>
+  processedCalls: Set<number>
   held?: HeldSelection
   diagnostics: string[]
 }
@@ -72,7 +74,10 @@ const ARG_LIMIT = 200
 const MESSAGE_OVERHEAD = 4
 
 export function createActiveSessionState(): ActiveSessionState {
-  return { pages: new Map(), identityActive: new Map(), pinOrder: [], stubbedKeys: new Set(), diagnostics: [] }
+  return {
+    pages: new Map(), identityActive: new Map(), pinOrder: [], stubbedKeys: new Set(),
+    processedCalls: new Set(), diagnostics: [],
+  }
 }
 
 export function pageKey(candidate: Pick<PageCandidate, 'ref' | 'contentHash'>): string {
@@ -123,6 +128,27 @@ function release(state: ActiveSessionState, key: string): void {
   const page = state.pages.get(key)
   if (page !== undefined) page.pinned = false
   state.pinOrder = state.pinOrder.filter(candidate => candidate !== key)
+}
+
+/** Hermes note_refault: one durable tool/call is one model-initiated re-read. */
+export function noteActiveRefault(
+  state: ActiveSessionState,
+  input: { seq: number; name: string; args: unknown },
+): number {
+  if (state.processedCalls.has(input.seq)) return 0
+  state.processedCalls.add(input.seq)
+  const ref = toolRef(undefined, input.name, input.args as never)
+  const prefix = `${ref}\u0000`
+  let pinned = 0
+  for (const [key, page] of state.pages) {
+    if (!key.startsWith(prefix)) continue
+    page.demandCount++
+    if (page.demandCount >= 2 && !page.pinned) {
+      pin(state, key)
+      pinned++
+    }
+  }
+  return pinned
 }
 
 /** L3/L4: first render is demand one; a new result for the same PageId is demand two. */
